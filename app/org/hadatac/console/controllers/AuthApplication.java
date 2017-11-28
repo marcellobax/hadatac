@@ -4,12 +4,11 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 
 import org.hadatac.console.controllers.triplestore.UserManagement;
-import org.hadatac.console.models.User;
+import org.hadatac.console.models.SysUser;
 
 import play.Routes;
 import play.data.Form;
 import play.mvc.*;
-import play.mvc.Http.Response;
 import play.mvc.Http.Session;
 import play.mvc.Result;
 
@@ -34,30 +33,24 @@ public class AuthApplication extends Controller {
 	public static final String DATA_MANAGER_ROLE = "data_manager";
 	
 	public static Result index() {
-		final User localUser = getLocalUser(session());
-		if (localUser != null) {
-			final org.hadatac.entity.pojo.User user = org.hadatac.entity.pojo.User.find(localUser.uri);
-			String permissions = user.getGroupNamesUri();
-			session().put("user_hierarchy", permissions);
-		}
 		return ok(portal.render());
 	}
 
-	public static User getLocalUser(final Session session) {
+	public static SysUser getLocalUser(final Session session) {
 		final AuthUser currentAuthUser = PlayAuthenticate.getUser(session);
-		final User localUser = User.findByAuthUserIdentity(currentAuthUser);
+		final SysUser localUser = SysUser.findByAuthUserIdentity(currentAuthUser);
 		return localUser;
 	}
 
 	@Restrict(@Group(AuthApplication.DATA_OWNER_ROLE))
 	public static Result restricted() {
-		final User localUser = getLocalUser(session());
+		final SysUser localUser = getLocalUser(session());
 		return ok(restricted.render(localUser));
 	}
 
 	@Restrict(@Group(AuthApplication.DATA_OWNER_ROLE))
 	public static Result profile() {
-		final User localUser = getLocalUser(session());
+		final SysUser localUser = getLocalUser(session());
 		return ok(profile.render(localUser));
 	}
 
@@ -70,10 +63,8 @@ public class AuthApplication extends Controller {
 		final Form<MyLogin> filledForm = MyUsernamePasswordAuthProvider.LOGIN_FORM
 				.bindFromRequest();
 		if (filledForm.hasErrors()) {
-			// User did not fill everything properly
 			return badRequest(login.render(filledForm));
 		} else {
-			// Everything was filled
 			return UsernamePasswordAuthProvider.handleLogin(ctx());
 		}
 	}
@@ -91,13 +82,13 @@ public class AuthApplication extends Controller {
 
 	public static Result doSignup() {
 		com.feth.play.module.pa.controllers.Authenticate.noCache(response());
-		final Form<MySignup> filledForm = MyUsernamePasswordAuthProvider.SIGNUP_FORM
-				.bindFromRequest();
+		final Form<MySignup> filledForm = 
+				MyUsernamePasswordAuthProvider.SIGNUP_FORM.bindFromRequest();
 		if (filledForm.hasErrors()) {
 			// User did not fill everything properly
 			return badRequest(signup.render(filledForm));
 		} else {
-			if (User.existsSolr()) { // only check for pre-registration if it is not the first user signing up
+			if (SysUser.existsSolr()) { // only check for pre-registration if it is not the first user signing up
 				if (!UserManagement.isPreRegistered(filledForm.get().email)) {
 					return ok(notRegistered.render());
 				}
@@ -111,12 +102,12 @@ public class AuthApplication extends Controller {
 	}
 	
 	public static Result doSignout() {
-		session().put("user_hierarchy", "");
+		session().remove("LabKeyUserName");
+		session().remove("LabKeyPassword");
 		return com.feth.play.module.pa.controllers.Authenticate.logout();
 	}
 
 	public static String formatTimestamp(final long t) {
 		return new SimpleDateFormat("yyyy-dd-MM HH:mm:ss").format(new Date(t));
 	}
-
 }

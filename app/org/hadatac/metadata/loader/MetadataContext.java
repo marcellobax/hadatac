@@ -1,35 +1,31 @@
 package org.hadatac.metadata.loader;
 
 import java.util.Map;
-import java.io.IOException;
-import java.io.StringReader;
-import java.io.StringWriter;
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
-
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-
-import org.apache.commons.io.IOUtils;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.DefaultHttpClient;
-import org.apache.http.impl.client.HttpClients;
 import org.apache.jena.query.DatasetAccessor;
 import org.apache.jena.query.DatasetAccessorFactory;
+import org.apache.jena.query.Query;
+import org.apache.jena.query.QueryExecution;
+import org.apache.jena.query.QueryExecutionFactory;
+import org.apache.jena.query.QueryFactory;
+import org.apache.jena.query.QuerySolution;
+import org.apache.jena.query.ResultSet;
+import org.apache.jena.query.ResultSetFactory;
+import org.apache.jena.query.ResultSetRewindable;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
+import org.apache.jena.rdf.model.Statement;
+import org.apache.jena.rdf.model.StmtIterator;
 import org.apache.jena.riot.RiotNotFoundException;
 import org.apache.jena.shared.NotFoundException;
+import org.apache.jena.update.UpdateExecutionFactory;
+import org.apache.jena.update.UpdateFactory;
+import org.apache.jena.update.UpdateProcessor;
+import org.apache.jena.update.UpdateRequest;
+import org.hadatac.entity.pojo.Study;
 import org.hadatac.utils.Collections;
-import org.hadatac.utils.Command;
 import org.hadatac.utils.Feedback;
 import org.hadatac.utils.NameSpace;
 import org.hadatac.utils.NameSpaces;
-import org.w3c.dom.Document;
-import org.xml.sax.InputSource;
 
 import play.Play;
 
@@ -37,111 +33,319 @@ public class MetadataContext implements RDFContext {
 
     String username = null;
     String password = null;
-    String kbURL = null;   
-	         // For local use:
-	         //   - http://localhost:7574/solr
+    String kbURL = null;
     boolean verbose = false;
 
     String processMessage = "";
     String loadFileMessage = "";
 	
     public MetadataContext(String un, String pwd, String kb, boolean ver) {
-        //System.out.println("Metadata management set for knowledge base at " + kb);
-	    username = un;
+    	username = un;
 	    password = pwd;
 	    kbURL = kb;
 	    verbose = ver;
     }
 
     public static Long playTotalTriples() {
-	     MetadataContext metadata = new MetadataContext("user", 
-	    		                                        "password", 
-	    		                                        Play.application().configuration().getString("hadatac.solr.triplestore"), 
-	    		                                        false);
-      return metadata.totalTriples();
+    	MetadataContext metadata = new MetadataContext(
+    			"user", "password", 
+    			Play.application().configuration().getString("hadatac.solr.triplestore"), 
+    			false);
+    	return metadata.totalTriples();
     }
-
-    private String executeQuery(String query) throws IllegalStateException, IOException{
-        CloseableHttpClient httpClient = HttpClients.createDefault();
-        //Scanner in = null;
-        try {
-        	HttpClient client = new DefaultHttpClient();
-         	//System.out.println("Query: <" + kbURL + "/store/sparql?q=" + query + ">");
-         	HttpGet request = new HttpGet(kbURL + Collections.METADATA_SPARQL + "?q=" + URLEncoder.encode(query, "UTF-8"));
-        	request.setHeader("Accept", "application/sparql-results+xml");
-        	HttpResponse response = client.execute(request);
-            StringWriter writer = new StringWriter();
-            IOUtils.copy(response.getEntity().getContent(), writer, "utf-8");
-    
-            return writer.toString();
-            
-        } finally
-        {
-            //in.close();
-            //request.close();
-        }
-    }// /executeQuery()
     
     public Long totalTriples() {
-    	String query = "SELECT (COUNT(*) as ?tot) WHERE { ?s ?p ?o . }";
     	try {
-			String result = executeQuery(query);
-		    DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-		    DocumentBuilder builder = factory.newDocumentBuilder();
-		    InputSource is = new InputSource(new StringReader(result));
-		    Document doc = builder.parse(is);
-		    //System.out.println(result);
-		    return Long.valueOf(doc.getElementsByTagName("literal").item(0).getTextContent()).longValue();
+    		String queryString = NameSpaces.getInstance().printSparqlNameSpaceList() + 
+    				"SELECT (COUNT(*) as ?tot) WHERE { ?s ?p ?o . }";
+    		Query query = QueryFactory.create(queryString);
+    			
+    		QueryExecution qexec = QueryExecutionFactory.sparqlService(
+    				Collections.getCollectionsName(Collections.METADATA_SPARQL), query);
+    		ResultSet results = qexec.execSelect();
+    		ResultSetRewindable resultsrw = ResultSetFactory.copyResults(results);
+    		qexec.close();
+    			
+    		QuerySolution soln = resultsrw.next();
+    		
+    		return Long.valueOf(soln.getLiteral("tot").getValue().toString()).longValue();
     	} catch (Exception e) {
-			//e.printStackTrace();
 			return (long) -1;
-		} 
+		}
     }
     
-	public String clean(int mode) {
+	public String clean(int mode) {	
 	    String message = "";
-	    String straux = "";
-	    //System.out.println("Is WEB? " + (mode == Feedback.WEB));
         message += Feedback.println(mode,"   Triples before [clean]: " + totalTriples());
         message += Feedback.println(mode, " ");
-	    // ATTENTION: For now, it erases entirely the content of the metadata collection 
-	    String query1 = "<delete><query>*:*</query></delete>";
-	    String query2 = "<commit/>";
-	    
-	    String url1;
-	    String url2;
+        
+        String queryString = "";
+		queryString += NameSpaces.getInstance().printSparqlNameSpaceList();
+		queryString += "DELETE WHERE { ?s ?p ?o . } ";
+		UpdateRequest req = UpdateFactory.create(queryString);
+		UpdateProcessor processor = UpdateExecutionFactory.createRemote(req, 
+				Collections.getCollectionsName(Collections.METADATA_UPDATE));
 		try {
-		    url1 = Collections.getCollectionsName(Collections.METADATA_UPDATE) + "?stream.body=" + URLEncoder.encode(query1, "UTF-8");
-		    url2 = Collections.getCollectionsName(Collections.METADATA_UPDATE) + "?stream.body=" + URLEncoder.encode(query2, "UTF-8");
-		    //Runtime.getRuntime().exec("curl -v " + url1);
-		    //Runtime.getRuntime().exec("curl -v " + url2);
-		    if (verbose) {
-		        message += Feedback.println(mode, url1);
-		        message += Feedback.println(mode, url2);
-		    }
-		    String[] cmd1 = {"curl", "-v", url1};
-			message += Feedback.print(mode, "    Erasing triples... ");                
-		    straux = Command.exec(mode, verbose, cmd1);
-		    if (mode == Feedback.WEB) {
-		    	message += straux;
-		    }
-		    message += Feedback.println(mode, "");
-			message += Feedback.print(mode, "   Committing... ");                
-		    String[] cmd2 = {"curl", "-v", url2};
-		    straux = Command.exec(mode, verbose, cmd2);
-		    if (mode == Feedback.WEB) {
-		    	message += straux;
-		    }
-		    message += Feedback.println(mode," ");
-		    message += Feedback.println(mode," ");
-			message += Feedback.print(mode,"   Triples after [clean]: " + totalTriples());                
-		} catch (UnsupportedEncodingException e) {
-		    System.out.println("[MetadataManagement] - ERROR encoding URLs");
-		    //e.printStackTrace();
-		    return message;
+			processor.execute();
+		} catch (Exception e) {
+			e.printStackTrace();
 		}
+		message += Feedback.println(mode, " ");
+		message += Feedback.println(mode, " ");
+		message += Feedback.print(mode, "   Triples after [clean]: " + totalTriples());
+		
         return message; 
 	}
+	
+	public String cleanStudy(int mode, String study) {	
+	    String message = "";
+        message += Feedback.println(mode,"   Triples before [clean]: " + totalTriples());
+        message += Feedback.println(mode, " ");
+        message += Feedback.println(mode, "      Deleted the following triples: ");
+        Study studyObj = new Study();
+        Model model = studyObj.findModel(study);
+        StmtIterator iter = model.listStatements();
+		while (iter.hasNext()) {
+			Statement stmt = iter.nextStatement();
+			System.out.println(stmt.toString());
+			message += Feedback.println(mode, stmt.toString());
+		}
+        
+        String queryString = "";
+		queryString += NameSpaces.getInstance().printSparqlNameSpaceList();
+		queryString += "DELETE {?s ?p ?o } " +
+		"WHERE " +
+		"{  " +
+		"  { " +
+		"	{  " +
+		// Study 
+		"   ?subUri rdfs:subClassOf* hasco:Study . " + 
+		"  	?s a ?subUri . " +
+		"  	?s ?p ?o . " +
+		"  	FILTER (?s = " + study + ") " +
+		"  	} " +
+		"    MINUS " +
+		"    { " +
+		// Other Studies 
+		"   ?subUri rdfs:subClassOf* hasco:Study . " + 
+		"  	?s a ?subUri . " +
+		"  	?s ?p ?o . " +
+		"  	FILTER (?s != " + study + ") " +
+		"    }  " +
+		"  } " +
+		"  UNION " + 
+		"  { " +
+		"	{  " +
+		//  Data Acquisitions, Cohort
+		"  	?subUri rdfs:subClassOf* hasco:Study . " + 
+		"  	?study a ?subUri . " +
+		"  	?s hasco:isDataAcquisitionOf|hasco:isCohortOf ?study . " + 
+		"  	?s ?p ?o . " +
+		"  	FILTER (?study = " + study + ") " +
+		"  	} " +
+		"    MINUS " +
+		"    {  " +
+		// Other Data Acquisitions, Cohort
+		"  	?subUri rdfs:subClassOf* hasco:Study . " + 
+		"  	?study a ?subUri . " +
+		"  	?s hasco:isDataAcquisitionOf|hasco:isCohortOf ?study . " + 
+		"  	?s ?p ?o . " +
+		"  	FILTER (?study != " + study + ") " +
+		"  	} " +
+		"  } " +
+		"  UNION " + 
+		"  { " +
+		"	{  " +
+		//  Cohort Subjects
+		"  	?subUri rdfs:subClassOf* hasco:Study . " + 
+		"  	?study a ?subUri . " +
+		"  	?cohort hasco:isCohortOf ?study . " +
+		"	?s hasco:isSubjectOf ?cohort . " +
+		"  	?s ?p ?o . " +
+		"  	FILTER (?study = " + study + ") " +
+		"  	} " +
+		"    MINUS " +
+		"    {  " +
+		// Other Cohort Subjects
+		"  	?subUri rdfs:subClassOf* hasco:Study . " + 
+		"  	?study a ?subUri . " +
+		"  	?cohort hasco:isCohortOf ?study . " +
+		"	?s hasco:isSubjectOf ?cohort . " +
+		"  	?s ?p ?o . " +
+		"  	FILTER (?study != " + study + ") " +
+		"  	} " +
+		"  } " +
+		"  UNION " + 
+		"  { " +
+		"	{  " +
+		//  Data Acquisition Schema and Deployment
+		"  	?subUri rdfs:subClassOf* hasco:Study . " + 
+		"  	?study a ?subUri . " +
+		"  	?da hasco:isDataAcquisitionOf ?study . " + 
+		"   ?da hasco:hasSchema|hasco:hasDeployment ?s . " +
+		"  	?s ?p ?o . " +
+		"  	FILTER (?study = " + study + ") " +
+		"  	} " +
+		"    MINUS " +
+		"    {  " +
+		// Other Data Acquisition Schema and Deployment
+		"  	?subUri rdfs:subClassOf* hasco:Study . " + 
+		"  	?study a ?subUri . " +
+		"  	?da hasco:isDataAcquisitionOf ?study . " + 
+		"   ?da hasco:hasSchema|hasco:hasDeployment ?s . " +
+		"  	?s ?p ?o . " +
+		"  	FILTER (?study != " + study + ") " +
+		"  	} " +
+		"  } " +
+		"  UNION " + 
+		"  { " +
+		"    { " +
+		// Sample Collections
+		"  	?subUri rdfs:subClassOf* hasco:Study . " + 
+		"  	?study a ?subUri . " +
+		"   ?s hasco:isSampleCollectionOf ?study . " + 
+		"   ?s ?p ?o . " +
+		"  FILTER (?study = " + study + ") " +
+		"    } " +
+		"    MINUS " +
+		"    { " +
+		// Other Sample Collections
+		"  	?subUri rdfs:subClassOf* hasco:Study . " + 
+		"  	?study a ?subUri . " +
+		"   ?s hasco:isSampleCollectionOf ?study . " + 
+		"   ?s ?p ?o . " +
+		"  	FILTER (?study != " + study + ") " +
+		"    } " +
+		"  } "  +
+		"  UNION " + 
+		"  { " +
+		"    { " +
+		// Sample Collection Samples
+		"  	?subUri rdfs:subClassOf* hasco:Study . " + 
+		"  	?study a ?subUri . " +
+		"   ?sc hasco:isSampleCollectionOf ?study . " + 
+		"   ?s hasco:isObjectOf ?sc .  " +
+		"   ?s ?p ?o . " +
+		"  FILTER (?study = " + study + ") " +
+		"    } " +
+		"    MINUS " +
+		"    { " +
+		// Other Sample Collection Samples
+		"  	?subUri rdfs:subClassOf* hasco:Study . " + 
+		"  	?study a ?subUri . " +
+		"   ?sc hasco:isSampleCollectionOf ?study . " + 
+		"   ?s hasco:isObjectOf ?sc .  " +
+		"   ?s ?p ?o . " +
+		"  	FILTER (?study != " + study + ") " +
+		"    } " +
+		"  } "  +
+		"  UNION " + 
+		"  { " +
+		"    { " +
+		// Deployment - Platform, Instrument, detector
+		"  	?subUri rdfs:subClassOf* hasco:Study .  " + 
+		"  	?study a ?subUri . " +
+		"   ?da hasco:isDataAcquisitionOf ?study . " + 
+		"  	?da hasco:hasDeployment ?deploy .  " +
+		"	?deploy vstoi:hasPlatform|hasco:hasInstrument|hasco:hasDetector ?s . " +
+		"  	?s ?p ?o . " +
+		"  FILTER (?study = " + study + ") " +
+		"    } " +
+		"    MINUS " +
+		"    { " +
+		// Other Deployment - Platform, Instrument, detector
+		"  	?subUri rdfs:subClassOf* hasco:Study .  " + 
+		"  	?study a ?subUri . " +
+		"   ?da hasco:isDataAcquisitionOf ?study . " + 
+		"  	?da hasco:hasDeployment ?deploy .  " +
+		"	?deploy vstoi:hasPlatform|hasco:hasInstrument|hasco:hasDetector ?s . " +
+		"  	?s ?p ?o . " +
+		"  	FILTER (?study != " + study + ") " +
+		"    } " +
+		"  } " +
+		"  UNION " + 
+		"  { " +
+		"    { " +
+		// DA Schema Attribute
+		"  	?subUri rdfs:subClassOf* hasco:Study .  " + 
+		"  	?study a ?subUri . " +
+		"  	?da hasco:isDataAcquisitionOf ?study . " +
+		"   ?da hasco:hasSchema ?schema . " +
+		"   ?s hasco:partOfSchema ?schema . " +
+		"  	?s ?p ?o . " +
+		"  	FILTER (?study = " + study + ") " +
+		"    } " +
+		"    MINUS " +
+		"    { " +
+		// Other DA Schema Attribute
+		"  	?subUri rdfs:subClassOf* hasco:Study .  " + 
+		"  	?study a ?subUri . " +
+		"  	?da hasco:isDataAcquisitionOf ?study . " +
+		"   ?da hasco:hasSchema ?schema . " +
+		"   ?s hasco:partOfSchema ?schema . " +
+		"  	?s ?p ?o . " +
+		"  FILTER (?study != " + study + ") " +
+		"    } " +
+		"  } " +
+		"  UNION  " +
+		"  { " +
+		"  	 {  " +
+		// Datasets
+		"   ?subUri rdfs:subClassOf* hasco:Study . " + 
+		"   ?study a ?subUri . " +
+		"   ?s hasco:isDatasetOf ?study . " +
+		"   ?s ?p ?o . " +
+		"   FILTER (?study = " + study + ") " +
+		"    } " +
+		"    MINUS " +
+		"    {  " +
+		// Other Datasets
+		"   ?subUri rdfs:subClassOf* hasco:Study . " + 
+		"   ?study a ?subUri . " +
+		"   ?s hasco:isDatasetOf ?study . " +
+		"   ?s ?p ?o . " +
+		"   FILTER (?study != " + study + ") " +
+		"     } " +
+		"   } " +
+		"   UNION " + 
+		"   { " +
+		"  	  {  " +
+		// Attribute References 
+		"    ?subUri rdfs:subClassOf* hasco:Study . " + 
+		"    ?study a ?subUri . " +
+		"    ?data hasco:isDatasetOf ?study . " +
+		"    ?s hasco:isAttributeReferenceOf ?data . " +
+		"    ?s ?p ?o . " +
+		"    FILTER (?study = " + study + ") " +
+		"    } " +
+		"    MINUS " +
+		"    {  " +
+		// Other Attribute References
+		"    ?subUri rdfs:subClassOf* hasco:Study . " + 
+		"    ?study a ?subUri . " +
+		"    ?data hasco:isDatasetOf ?study . " +
+		"     ?s hasco:isAttributeReferenceOf ?data . " +
+		"    ?s ?p ?o . " +
+		"    FILTER (?study != " + study + ") " +
+		"    } " +
+		"  } " +
+		"} ";
+		
+		UpdateRequest req = UpdateFactory.create(queryString);
+		UpdateProcessor processor = UpdateExecutionFactory.createRemote(req, 
+				Collections.getCollectionsName(Collections.METADATA_UPDATE));
+		try {
+			processor.execute();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		message += Feedback.println(mode, " ");
+		message += Feedback.println(mode, " ");
+		message += Feedback.print(mode, "   Triples after [clean]: " + totalTriples());
+		
+        return message; 
+	}
+	
 	
 	public String getLang(String contentType) {
 		if (contentType.contains("turtle")) {
@@ -160,13 +364,13 @@ public class MetadataContext implements RDFContext {
 	 */
 	public Long loadLocalFile(int mode, String filePath, String contentType) {
 		Model model = ModelFactory.createDefaultModel();
-		DatasetAccessor accessor = DatasetAccessorFactory.createHTTP(kbURL + Collections.METADATA_GRAPH);
+		DatasetAccessor accessor = DatasetAccessorFactory.createHTTP(
+				kbURL + Collections.METADATA_GRAPH);
 
 		loadFileMessage = "";
 		Long total = totalTriples();
 		try {
 			model.read(filePath, getLang(contentType));
-			System.out.println("------------------====---------");
 			accessor.add(model);
 		} catch (NotFoundException e) {
 			System.out.println("NotFoundException: file " + filePath);
@@ -178,13 +382,6 @@ public class MetadataContext implements RDFContext {
 			System.out.println("Exception: file " + filePath);
 			System.out.println("Exception: " + e.getMessage());
 		}
-		
-		//loadFileMessage = "";
-		//if (verbose) {
-		//	System.out.println("curl -v " + kbURL + "/store/update/bulk?commit=true -H \"Content-Type: " + contentType + "\" --data-binary @" + filePath);
-		//}
-		//String[] cmd = {"curl", "-v", kbURL + "/store/update/bulk?commit=true","-H", "Content-Type: " + contentType, "--data-binary", "@" + filePath};
-		//loadFileMessage += executeCommand(mode, cmd);
 
 		Long newTotal = totalTriples();
 		return (newTotal - total);

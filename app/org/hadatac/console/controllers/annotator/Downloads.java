@@ -16,14 +16,13 @@ import play.mvc.Result;
 
 import org.apache.commons.io.FileUtils;
 import org.hadatac.console.controllers.AuthApplication;
-import org.hadatac.console.controllers.dataacquisition.LoadCCSV;
+import org.hadatac.console.controllers.dataacquisitionsearch.LoadCCSV;
 import org.hadatac.console.models.CSVAnnotationHandler;
 import org.hadatac.console.views.html.annotator.*;
 import org.hadatac.data.api.DataFactory;
-import org.hadatac.data.loader.ccsv.Parser;
 import org.hadatac.data.loader.util.Arguments;
 import org.hadatac.data.loader.util.FileFactory;
-import org.hadatac.data.model.DatasetParsingResult;
+import org.hadatac.data.model.ParsingResult;
 import org.hadatac.utils.Feedback;
 import org.hadatac.utils.NameSpaces;
 
@@ -58,9 +57,9 @@ public class Downloads extends Controller {
 
     public static final String FRAG_MEASUREMENT_TYPE_PART1  = "> a hadatac:MeasurementType; ";
     public static final String FRAG_MEASUREMENT_TYPE_PART2  = " hadatac:atColumn ";
-    public static final String FRAG_MEASUREMENT_TYPE_PART3  = "; hasneto:hasEntity ";
-    public static final String FRAG_MEASUREMENT_TYPE_PART4  = "; hasneto:hasAttribute ";
-    public static final String FRAG_MEASUREMENT_TYPE_PART5  = "; hasneto:hasUnit ";
+    public static final String FRAG_MEASUREMENT_TYPE_PART3  = "; hasco:hasEntity ";
+    public static final String FRAG_MEASUREMENT_TYPE_PART4  = "; hasco:hasAttribute ";
+    public static final String FRAG_MEASUREMENT_TYPE_PART5  = "; hasco:hasUnit ";
 
     public static final String FRAG_IN_DATE_TIME            = "time:inDateTime";
     public static final String FRAG_IN_DATE_TIME_SUFFIX     = " <ts0>; ";
@@ -93,9 +92,8 @@ public class Downloads extends Controller {
             return ok(completeAnnotation.render("Annotation operation finished."));       		
     	}
     	
-    	NameSpaces ns = NameSpaces.getInstance();
     	String preamble = FRAG_START_PREAMBLE;
-    	preamble += ns.printNameSpaceList();
+    	preamble += NameSpaces.getInstance().printTurtleNameSpaceList();
     	preamble += "\n";
 
     	/* 
@@ -124,7 +122,7 @@ public class Downloads extends Controller {
 			
 			  preamble += "<" + DataFactory.getNextURI(DataFactory.DATASET_ABBREV) + ">";
 			  preamble += FRAG_DATASET;
-			  preamble += handler.getDataCollectionUri() + ">; ";
+			  preamble += handler.getDataAcquisitionUri() + ">; ";
 			
 			  int i = 0;
 			  int timeStampIndex = -1;
@@ -197,7 +195,7 @@ public class Downloads extends Controller {
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
-			return ok (completeAnnotation.render("Error processing form. Please restart form."));
+			return ok(completeAnnotation.render("Error processing form. Please restart form."));
 		} 
     	
     	preamble += FRAG_END_PREAMBLE;
@@ -212,36 +210,33 @@ public class Downloads extends Controller {
 				preamble += FileUtils.readFileToString(newFile, "UTF-8");
 			} catch (IOException e) {
 				e.printStackTrace();
-				return ok (completeAnnotation.render("Error reading cached CSV file. Please restart form."));
+				return ok(completeAnnotation.render("Error reading cached CSV file. Please restart form."));
 			}
 	        return ok(preamble).as("text/turtle");
     	}
     	
     	if (oper.equals(OPER_UPLOAD)) {
-    		String message = "";
     		File newFile = new File(handler.getDatasetName()); 
 		    try {
 				preamble += FileUtils.readFileToString(newFile, "UTF-8");
 			} catch (IOException e) {
 				e.printStackTrace();
-				return ok (completeAnnotation.render("Error reading cached CSV file. Please restart form."));
+				return ok(completeAnnotation.render("Error reading cached CSV file. Please restart form."));
 			}
 
 		    try {
 				FileUtils.writeStringToFile(new File(LoadCCSV.UPLOAD_NAME), preamble);
 			} catch (IOException e) {
 				e.printStackTrace();
-				return ok (completeAnnotation.render("Error aving CCSV file locally. Please restart form."));
+				return ok(completeAnnotation.render("Error aving CCSV file locally. Please restart form."));
 			}
 		    
-		    message = LoadCCSV.playLoadCCSV();
-		    
-			return ok (completeAnnotation.render(message));
+		    ParsingResult result = LoadCCSV.playLoadCCSV();
+			return ok(completeAnnotation.render(result.getMessage()));
 		    
     	}
     	
-		return ok (completeAnnotation.render("Error processing form: unspecified download operation."));
-    	
+		return ok(completeAnnotation.render("Error processing form: unspecified download operation."));
     }
 
 }

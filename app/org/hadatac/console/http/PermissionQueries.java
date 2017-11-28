@@ -1,21 +1,15 @@
 package org.hadatac.console.http;
 
-import java.io.StringWriter;
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
-import java.util.Scanner;
+import java.io.ByteArrayOutputStream;
 
-import org.apache.commons.io.IOUtils;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.ClientProtocolException;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.DefaultHttpClient;
-import org.apache.http.impl.client.HttpClients;
+import org.apache.jena.query.Query;
+import org.apache.jena.query.QueryExecution;
+import org.apache.jena.query.QueryExecutionFactory;
+import org.apache.jena.query.QueryFactory;
+import org.apache.jena.query.ResultSet;
+import org.apache.jena.query.ResultSetFormatter;
 import org.hadatac.utils.Collections;
-
-import play.Play;
+import org.hadatac.utils.NameSpaces;
 
 public class PermissionQueries {
 
@@ -23,7 +17,6 @@ public class PermissionQueries {
     public static final String PERMISSIONS_BY_URI        = "PermissionsByURI";
     
     public static String querySelector(String concept, String uri){
-        // default query?
         String q = "SELECT * WHERE { ?s ?p ?o } LIMIT 10";
         switch (concept){
             case PERMISSION_BY_EMAIL : 
@@ -42,57 +35,39 @@ public class PermissionQueries {
         	        "PREFIX hasneto: <http://hadatac.org/ont/hasneto#>  " +
                     "SELECT ?deturi ?detModel ?sp ?ec ?ecName WHERE { " + 
                     "   <" + uri + "> a vstoi:Deployment . " + 
-                    "   <" + uri + "> hasneto:hasDetector ?deturi .  " +
+                    "   <" + uri + "> hasco:hasDetector ?deturi .  " +
                     "   ?deturi a ?detModel . " +
                     "   ?sp vstoi:perspectiveOf ?detModel . " +
-                    "   ?sp hasneto:hasPerspectiveCharacteristic ?ec ." +
+                    "   ?sp hasco:hasPerspectiveCharacteristic ?ec ." +
                     "   ?ec rdfs:label ?ecName .  " + 
                     "}";
                 break;
             default :
             	q = "";
             	System.out.println("WARNING: no query for tab " + concept);
-        }// /switch
+        }
         return q;
-    } // /querySelector
+    }
 
     public static String exec(String concept, String uri) {
-	    String collection = Collections.getCollectionsName(Collections.PERMISSIONS_SPARQL);
-        StringBuffer sparql_query = new StringBuffer();
-        sparql_query.append(collection);
-        sparql_query.append("?q=");
-
-        String q = querySelector(concept, uri);
-        System.out.println("Query: [" + q + "]");
-        try {
-            sparql_query.append(URLEncoder.encode(q, "UTF-8"));
-        } catch (UnsupportedEncodingException e) {
-            e.printStackTrace();
-        }            
-
-        CloseableHttpClient httpClient = HttpClients.createDefault();
-        Scanner in = null;
-        try {
-        	HttpClient client = new DefaultHttpClient();
-        	HttpGet request = new HttpGet(sparql_query.toString().replace(" ", "%20"));
-        	request.setHeader("Accept", "application/sparql-results+json");
-        	HttpResponse response;
-            StringWriter writer = new StringWriter();			
-            try {
-				response = client.execute(request);
-
-                try {
-		    		IOUtils.copy(response.getEntity().getContent(), writer, "utf-8");
-		    	} catch (Exception e) {
-			    	// TODO Auto-generated catch block
-			    	e.printStackTrace();
-			    } 
-			} catch (Exception e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			} 
-            return writer.toString();
-        } finally {
-        }
-    } // /executeQuery()
+    	ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+    	try {
+    		String queryString = NameSpaces.getInstance().printSparqlNameSpaceList() + 
+    					querySelector(concept, uri);
+    		Query query = QueryFactory.create(queryString);
+    			
+    		QueryExecution qexec = QueryExecutionFactory.sparqlService(
+    				Collections.getCollectionsName(Collections.PERMISSIONS_SPARQL), query);
+    		ResultSet results = qexec.execSelect();
+    		
+    		ResultSetFormatter.outputAsJSON(outputStream, results);
+    		qexec.close();
+    		
+    		return outputStream.toString("UTF-8");
+    	} catch (Exception e) {
+			e.printStackTrace();
+		}
+    	
+    	return "";
+    }
 }

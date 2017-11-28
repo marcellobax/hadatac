@@ -2,16 +2,18 @@
 <schema version="1.5">
   <fields>
     <field name="uri" type="string" indexed="true" stored="true"/>
-	<field name="owner_uri" type="string" indexed="true" docValues="true" />
-	<field name="permission_uri" type="string" indexed="true" docValues="true" />
-	<field name="triggering_event" type="int" stored="true" indexed="true" docValues="true" />
-	<field name="nr_data_points" type="long" stored="true" indexed="true" docValues="true" />
+    <field name="owner_uri" type="string" indexed="true" docValues="true" />
+    <field name="permission_uri" type="string" indexed="true" docValues="true" />
+    <field name="parameter" type="string" indexed="true" docValues="true" />
+    <field name="status" type="int" stored="true" indexed="true" docValues="true" />
+    <field name="triggering_event" type="int" stored="true" indexed="true" docValues="true" />
+    <field name="nr_data_points" type="long" stored="true" indexed="true" docValues="true" />
     <field name="_version_" type="long" indexed="true" stored="true"/>
     <field name="_text_" type="text_general" indexed="true" stored="false" multiValued="true" />
-    <field name="label" type="string" indexed="true" docValues="true" multiValued="true" />
-    <field name="comment" type="string" indexed="true" docValues="true" multiValued="true" />
+    <field name="label" type="string" indexed="true" docValues="true" />
+    <field name="comment" type="string" indexed="true" docValues="true" />
     <field name="used_uri" type="string" indexed="true" docValues="true" multiValued="true" />
-    <field name="was_associated_with_uri" type="string" indexed="true" docValues="true" multiValued="true" />
+    <field name="associated_uri" type="string" indexed="true" docValues="true" multiValued="true" />
     <field name="started_at" type="date" indexed="true" stored="true" docValues="true" default="NULL" />
     <field name="ended_at" type="date" indexed="true" stored="true" docValues="true" default="NULL" />
     <field name="unit" type="string" indexed="true" docValues="true" multiValued="true" />
@@ -24,6 +26,7 @@
     <field name="entity_uri" type="string" indexed="true" docValues="true" multiValued="true" />
     <field name="study_uri" type="string" indexed="true" docValues="true" />
     <field name="schema_uri" type="string" indexed="true" docValues="true" />
+    <field name="method_uri" type="string" indexed="true" docValues="true" />
     <field name="deployment_uri" type="string" indexed="true" docValues="true" />
     <field name="instrument_model" type="string" indexed="true" docValues="true" />
     <field name="instrument_uri" type="string" indexed="true" docValues="true" />
@@ -32,6 +35,10 @@
     <field name="location" type="latlong" indexed="true" />
     <field name="elevation" type="double" indexed="true" />
     <field name="dataset_uri" type="string" indexed="true" docValues="true" multiValued="true" />
+    <field name="globalscope_uri" type="string" indexed="true" docValues="true" />
+    <field name="globalscope_name" type="string" indexed="true" docValues="true" />
+    <field name="localscope_uri" type="string" indexed="true" docValues="true"  multiValued="true" />
+    <field name="localscope_name" type="string" indexed="true" docValues="true" multiValued="true" />
     <dynamicField name="JP_*" type="string" indexed="true" stored="true" />
     <copyField source="JP_*" dest="_text_" />
     <copyField source="characteristic" dest="_text_" />
@@ -49,11 +56,13 @@
     <fieldType name="long" class="solr.TrieLongField" precisionStep="0" positionIncrementGap="0"/>
     <fieldType name="double" class="solr.TrieDoubleField"/>
     <fieldType name="int" class="solr.TrieIntField"/>
-    <fieldType name="latlong" class="solr.SpatialRecursivePrefixTreeFieldType"
-               spatialContextFactory="com.spatial4j.core.context.jts.JtsSpatialContextFactory"
+    <fieldType name="latlong"   class="solr.SpatialRecursivePrefixTreeFieldType"
+               spatialContextFactory="org.locationtech.spatial4j.context.jts.JtsSpatialContextFactory"
+               autoIndex="true"
+               validationRule="repairBuffer0"
                distErrPct="0.025"
-               maxDistErr="0.000009"
-               units="degrees" />
+               maxDistErr="0.001"
+               distanceUnits="kilometers" />
     <fieldType name="text_general" class="solr.TextField" positionIncrementGap="100" multiValued="true">
       <analyzer type="index">
         <tokenizer class="solr.StandardTokenizerFactory"/>

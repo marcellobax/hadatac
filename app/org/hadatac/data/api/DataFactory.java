@@ -3,44 +3,57 @@ package org.hadatac.data.api;
 import java.util.List;
 
 import org.hadatac.entity.pojo.ConsoleStore;
-import org.hadatac.entity.pojo.DataCollection;
+import org.hadatac.entity.pojo.DataAcquisition;
+import org.hadatac.entity.pojo.DataAcquisitionSchema;
 import org.hadatac.entity.pojo.Dataset;
 import org.hadatac.entity.pojo.Deployment;
 import org.hadatac.entity.pojo.Detector;
 import org.hadatac.entity.pojo.Instrument;
 import org.hadatac.entity.pojo.Platform;
+import org.hadatac.entity.pojo.Study;
+import org.hadatac.utils.ConfigProp;
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
 
 import play.Play;
 
 public class DataFactory {
 
-	public static String DEPLOYMENT_ABBREV = "DP";
-
+    public static String DEPLOYMENT_ABBREV = "DP";
+    
     public static String DATA_COLLECTION_ABBREV = "DC";
     
     public static String DATASET_ABBREV = "DS";
     
     public static String CONSOLE_ID = "00000001";
     
-    public static DataCollection createDataCollection(String dataCollectionUri, String deploymentUri, int triggeringEvent, String ownerUri) {
-		DataCollection dataCollection = null;
-		Deployment deployment = Deployment.find(deploymentUri);
-		
-		dataCollection = new DataCollection();
-		dataCollection.setUri(dataCollectionUri);
-		dataCollection.setOwnerUri(ownerUri);
-		dataCollection.setPermissionUri(ownerUri);
-		dataCollection.setTriggeringEvent(triggeringEvent);
-		dataCollection.setPlatformUri(deployment.platform.getUri());
-		dataCollection.setInstrumentUri(deployment.instrument.getUri());
-		dataCollection.setPlatformName(deployment.platform.getLabel());
-		dataCollection.setInstrumentModel(deployment.instrument.getLabel());
-		dataCollection.setStartedAtXsdWithMillis(deployment.getStartedAt());
-		dataCollection.setDeploymentUri(deploymentUri);
-		dataCollection.save();
-		
-		return dataCollection;
+    public static final String kbPrefix = ConfigProp.getKbPrefix();
+    
+    public static DataAcquisition createDataAcquisition(int triggeringEvent,
+							String dataCollectionUri, 
+							String deploymentUri, 
+							String parameter,
+							String ownerUri) {
+	Deployment deployment = Deployment.find(deploymentUri);
+	if (null == deployment) {
+	    return null;
 	}
+	
+	DataAcquisition dataAcquisition = new DataAcquisition();
+	dataAcquisition.setUri(dataCollectionUri);
+	dataAcquisition.setOwnerUri(ownerUri);
+	dataAcquisition.setParameter(parameter);
+	dataAcquisition.setPermissionUri(ownerUri);
+	dataAcquisition.setTriggeringEvent(triggeringEvent);
+	dataAcquisition.setPlatformUri(deployment.getPlatform().getUri());
+	dataAcquisition.setInstrumentUri(deployment.getInstrument().getUri());
+	dataAcquisition.setPlatformName(deployment.getPlatform().getLabel());
+	dataAcquisition.setInstrumentModel(deployment.getInstrument().getLabel());
+	dataAcquisition.setStartedAtXsdWithMillis(deployment.getStartedAt());
+	dataAcquisition.setDeploymentUri(deploymentUri);
+	
+	return dataAcquisition;
+    }
 	
 	public static Dataset createDataset() {
 		Dataset dataset = null;
@@ -51,50 +64,77 @@ public class DataFactory {
 		Deployment deployment;
 		if (type.equalsIgnoreCase("LEGACY")) {
 			deployment = Deployment.createLegacy(deploymentUri);
-		} else {
+		} 
+		else {
 			deployment = Deployment.create(deploymentUri);
 		}
 		
-		deployment.platform = Platform.find(platformUri);
-		deployment.instrument = Instrument.find(instrumentUri);
+		deployment.setPlatform(Platform.find(platformUri));
+		deployment.setInstrument(Instrument.find(instrumentUri));
 		for (int i = 0; i < detectorUri.size(); i++) {
-			deployment.detectors.add(Detector.find(detectorUri.get(i)));
+			deployment.getDetectors().add(Detector.find(detectorUri.get(i)));
 		}
 		deployment.setStartedAtXsd(startedAt);
-		deployment.save();
 		
 		return deployment;
 	}
 	
-	public static Deployment createLegacyDeployment(String deploymentUri, String platformUri, String instrumentUri, List<String> detectorUri, String startedAt) {
-		Deployment deployment = Deployment.createLegacy(deploymentUri);
-		
-		deployment.platform = Platform.find(platformUri);
-		deployment.instrument = Instrument.find(instrumentUri);
-		for (int i = 0; i < detectorUri.size(); i++) {
-			deployment.detectors.add(Detector.find(detectorUri.get(i)));
-		}
-		deployment.setStartedAtXsd(startedAt);
-		deployment.save();
-		
-		return deployment;
-	}
+    public static Study createStudy(String studyUri, List<String> dataAcquisionUris, String startedAt) {
+	Study study;
 	
-	public static DataCollection getActiveDataCollection(String deploymentUri) {
-		List<DataCollection> list;
-		Deployment deployment = Deployment.find(deploymentUri);
-		list = DataCollection.find(deployment, true);
-		if (list.isEmpty()) {
-			return null;
-		}
-		return list.get(0);
-	}
+	study = new Study();
+
+	study.setUri(studyUri);
+	study.setStartedAtXsd(startedAt);
 	
+	return study;
+    }
+    
+    public static Deployment createLegacyDeployment(String deploymentUri, String platformUri, String instrumentUri, List<String> detectorUri, String startedAt) {
+	Deployment deployment = Deployment.createLegacy(deploymentUri);
+	
+	deployment.setPlatform(Platform.find(platformUri));
+	deployment.setInstrument(Instrument.find(instrumentUri));
+	for (int i = 0; i < detectorUri.size(); i++) {
+	    deployment.getDetectors().add(Detector.find(detectorUri.get(i)));
+	}
+	deployment.setStartedAtXsd(startedAt);
+	deployment.save();
+	
+	return deployment;
+    }
+    
+    public static DataAcquisitionSchema createDataAcquisitionSchema(String dasName) {
+	String dasUri = kbPrefix + "SDD-" + dasName;
+	String dasLabel = "Schema for " + dasName;
+	DataAcquisitionSchema das = DataAcquisitionSchema.create(dasUri);
+	das.setLabel(dasLabel);
+	das.save();
+	return das;
+    }
+    
+    public static DataAcquisition getActiveDataAcquisition(String deploymentUri) {
+	List<DataAcquisition> list;
+	Deployment deployment = Deployment.find(deploymentUri);
+	list = DataAcquisition.find(deployment, false);
+	if (list.isEmpty()) {
+	    return null;
+	}
+	return list.get(0);
+    }
+    
 	public static long getNextDynamicMetadataId() {
-		ConsoleStore consoleStore = ConsoleStore.find();
-		
 		try {
-			consoleStore.setLastDynamicMetadataId(consoleStore.getLastDynamicMetadataId()+1);
+			ConsoleStore consoleStore = ConsoleStore.find();
+			if (null == consoleStore) {
+				consoleStore = new ConsoleStore();
+				consoleStore.setId(0);
+	        	consoleStore.setTimestamp(new DateTime().withZone(DateTimeZone.UTC).
+	        			toString("EEE MMM dd HH:mm:ss zzz yyyy"));
+	        	consoleStore.setLastDynamicMetadataId(1);
+			} else {
+				consoleStore.setLastDynamicMetadataId(consoleStore.getLastDynamicMetadataId() + 1);
+			}
 			consoleStore.save();
 			return consoleStore.getLastDynamicMetadataId();
 		} catch (Exception e) {
@@ -113,5 +153,12 @@ public class DataFactory {
     	return host + "/hadatac/kb/" + category + "/" + CONSOLE_ID + "/" + metadataId ;   
     }
     
-
+    public static String getNextDatasetURI(String base) {
+    	String metadataId = Long.toHexString(DataFactory.getNextDynamicMetadataId());
+    	for (int i = metadataId.length(); i <= 8; i++) {
+    		metadataId = "0" + metadataId;
+    	}
+    	
+    	return base + "/" + metadataId ;   
+    }
 }

@@ -1,0 +1,226 @@
+@import helper._
+@import org.hadatac.console.views.html._
+@import org.hadatac.console.models.FacetHandler
+
+@(	page : Int,
+	rows : Int,
+	facets : String,
+	resultsSize : Long,
+	results : org.hadatac.data.model.AcquisitionQueryResult,
+	documentJson : String,
+	handler : org.hadatac.console.models.FacetHandler,
+	query : String,
+	objDetails : String
+)
+
+@main("Simple Faceted Search") {
+	<script type="text/javascript" src="/hadatac/assets/javascripts/datasearch.js"></script>
+	<div id="query" data-documents="@documentJson" data-query="@query"/>
+	<div id="facetDiv" data-documents="@handler.toJSON()"/>
+	
+	<div class="container-fluid">
+		<div class="row">
+			<div class="col-md-3 sidebar">
+				<div id="legend">
+					<legend>Facet search</legend>
+				</div>
+				<center>
+					<button type="button" class="btn btn-primary" onClick="search();">Search</button>
+					<button type="button" class="btn btn-primary" onClick="clearSearch();">Clear Search</button>
+					<button type="button" class="btn btn-primary" data-toggle="modal" data-target="#myModal">Download</button>
+                                        <a href="@org.hadatac.console.controllers.dataacquisitionsearch.routes.DataAcquisitionSearch.index()" id="data" class="btn btn-primary" role="button">Hide Data</a>
+				</center>
+				
+				<div width="100%" style="background-color:#dddddd">
+					<label class="col-md-offset-1 control-label">Studies and Data Acquisitions</label>
+				</div>
+				<div id="treeStudyBox" style="width:100%; height:150px; background-color:#f5f5f5; border :1px solid Silver; overflow:auto;"></div>
+				
+				<div width="100%" style="background-color:#dddddd">
+					<label class="col-md-offset-1 control-label">Entities and Attributes</label>
+				</div>
+				<div id="treeEntityCharacteristicBox" style="width:100%; height:150px; background-color:#f5f5f5; border :1px solid Silver; overflow:auto;"></div>
+				
+				<div width="100%" style="background-color:#dddddd">
+					<label class="col-md-offset-1 control-label">Units</label>
+				</div>
+				<div id="treeUnitBox" style="width:100%; height:150px; background-color:#f5f5f5; border :1px solid Silver; overflow:auto;"></div>
+				
+				<div width="100%" style="background-color:#dddddd">
+					<label class="col-md-offset-1 control-label">Times</label>
+				</div>
+				<div id="treeTimeBox" style="width:100%; height:150px; background-color:#f5f5f5; border :1px solid Silver; overflow:auto;"></div>
+				
+				<div width="100%" style="background-color:#dddddd">
+					<label class="col-md-offset-1 control-label">Platforms and Instruments</label>
+				</div>
+				<div id="treePlatformInstrumentBox" style="width:100%; height:150px; background-color:#f5f5f5; border :1px solid Silver; overflow:auto;"></div>
+				
+				<div id="download_url" style="visibility: hidden ;">@org.hadatac.console.http.routes.SolrSearchProxy.getDataAcquisitionDownload()</div>
+				
+				<!-- Modal -->
+				<div id="myModal" class="modal fade" role="dialog">
+					<div class="modal-dialog">
+						<!-- Modal content-->
+						<div class="modal-content">
+							<div class="modal-header">
+								<button type="button" class="close" data-dismiss="modal">&times;</button>
+								<h4 class="modal-title">Download</h4>
+							</div>
+							<div class="modal-body">
+								<p>Options:</p>
+								
+								<!-- <a href="" class="btn btn-info" role="button" id="btn_download">Confirm</a> -->
+								<form action="@org.hadatac.console.http.routes.SolrSearchProxy.getDataAcquisitionDownload()" method="post">
+								    <select name="fl" class="form-control" id="sel_format">
+									    <option value="timestamp,value,pid,sid">Data without Object ID</option>
+									    <option value="timestamp,value,object_uri,pid,sid">Data with Object ID</option>
+									    <Option value="timestamp,value,object_uri,pid,sid,elevation,characteristic,unit,instrument_model,plaftorm_name,entity">Data and Contextual Metadata</option>
+									    <option value="timestamp,value,object_uri,pid,sid,elevation,characteristic,characteristic_uri,unit,unit_uri,instrument_model,instrument_uri,plaftorm_name,platform_uri,entity,entity_uri">Data, Contextual Metadata, Contextual Metadata URI</option>
+     								    </select>
+                                                                    <input name="wt" id="wt_post" type="hidden" />
+                                                                    <input name="rows" id="rows_post" type="hidden" />
+                                                                    <input name="q" id="q_post" type="hidden" />
+                                                                    <input name="mySubmit" class="btn btn-info" type="submit" value="Confirm" />
+                                                               </form>
+							</div>
+							<div class="modal-footer">
+								<button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="col-md-5 main">
+				<div id="legend">
+					<legend>Scientific Data</legend>
+				</div>
+				<div class="row placeholders"></div>
+				<div class="row placeholders"></div>
+				<div>
+					<div id="acquisition" class="tab-pane">
+						@table_acquisition(page, rows, facets, results.documents, resultsSize, objDetails)
+					</div>
+				</div>
+				<div class="container">
+					<ul class="pagination">
+						
+					</ul>
+				</div>
+			</div>
+			<div class="col-md-4">
+				<div class="row">
+					<div id="legend">
+						<legend>Scientific Data Details</legend>
+					</div>
+					<div class="tab-pane">
+						@if(results.documents.isEmpty) {
+							<script>alert("There is no scientific data to browse.");</script>
+						} else {
+							@measurement_details(results.documents(0))
+						}
+					</div>
+				</div>
+				<div class="row">
+					<div id="legend">
+						<legend>Detail's Metadata</legend>
+					</div>
+				</div>
+				<div class="row">
+					<div id="legend">
+						<legend>Object's Metadata</legend>
+					</div>
+					<div class="tab-pane">
+						@if(!results.documents.isEmpty) {
+							@object_details(results.documents(0))
+						}
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	
+	<script type="text/javascript" src="/hadatac/assets/javascripts/measurement.js"></script>
+	<script>
+	function loadTree(tree, data) {
+		tree.enableCheckBoxes(true, true);
+		tree.enableThreeStateCheckboxes(false);
+		tree.setImagePath("@controllers.routes.Assets.versioned("lib/dhtmlx/imgs/dhxtree_skyblue/")");
+		tree.setDataMode("json");
+		tree.attachEvent("onCheck", function(id) {
+			tree.setSubChecked(id, tree.isItemChecked(id));
+			var checked_items = tree.getAllChecked();
+			if (checked_items.length > 0) {
+				checked_items.split(",").forEach(function(element) {
+				if (tree.getAllSubItems(element).split(",").includes(id.toString())) {
+					if (!tree.isItemChecked(id)) {
+						tree.setCheck(element, false);
+					}
+				}
+				});	
+			}
+		});
+		tree.parse(data, "json");
+		//tree.attachEvent("onCheck",function(id) {
+			//jsonFacet['facetsAnd'][tree.getUserData(id, 'field')] = tree.getUserData(id, 'value');
+			//var url = location.protocol + '//' + location.host + location.pathname;
+			//url += '?facets=' + JSON.stringify(jsonFacet);
+			//window.location.href = encodeURI(url);
+			//return true;
+		//});
+		//tree.openAllItems(0);
+		//tree.closeAllItems(0);
+	}
+	
+	var btn = document.getElementById("btn_download");
+	if (btn != null) {
+		btn.href=document.getElementById("download_url").textContent+'?wt=csv&rows=9999999&q='+encodeURIComponent(document.getElementById('query').getAttribute('data-query'));
+	}
+
+	document.getElementById('wt_post').value = 'csv';
+	document.getElementById('rows_post').value = 9999999;
+	document.getElementById('q_post').value = encodeURIComponent(document.getElementById('query').getAttribute('data-query'));
+	
+	var jsonTree, dataTree;
+	var treeEC;
+	dataTree = parseSolrFacetToTree('@FacetHandler.ENTITY_CHARACTERISTIC_FACET');
+	//console.log("dataTree: " + JSON.stringify(dataTree));
+	treeEC = new dhtmlXTreeObject("treeEntityCharacteristicBox","100%","100%",0);
+	loadTree(treeEC, dataTree);
+	//var listEC = '@handler.values(FacetHandler.ENTITY_CHARACTERISTIC_FACET)';
+	//setCheckTree(treeEC, listEC, props);
+	
+	var treeS;
+	dataTree = parseSolrFacetToTree('@FacetHandler.STUDY_FACET');
+	console.log("dataTree: " + JSON.stringify(dataTree));
+	treeS = new dhtmlXTreeObject("treeStudyBox","100%","100%",0);
+	loadTree(treeS, dataTree);
+	//var listS = '@handler.values(FacetHandler.STUDY_FACET)';
+	//setCheckTree(treeS, listS, props);
+	
+	var treeU;
+	dataTree = parseSolrFacetToTree('@FacetHandler.UNIT_FACET');
+	treeU = new dhtmlXTreeObject("treeUnitBox","100%","100%",0);
+	loadTree(treeU, dataTree);
+	//var listU = '@handler.values(FacetHandler.UNIT_FACET)';
+	//setCheckTree(treeU, listU, props);
+	
+	var treeT;
+	props = "timestamp";
+	jsonTree = parseSolrRangeFacetFieldToTree(props);
+	dataTree = JSON.parse(jsonTree);
+	treeT = new dhtmlXTreeObject("treeTimeBox","100%","100%",0);
+	loadTree(treeT, dataTree);
+	//var listT = '@handler.values(FacetHandler.TIME_FACET)';
+	//setCheckTree(treeT, listT, props);
+	
+	var treePI;
+	dataTree = parseSolrFacetToTree('@FacetHandler.PLATFORM_INSTRUMENT_FACET');
+	treePI = new dhtmlXTreeObject("treePlatformInstrumentBox","100%","100%",0);
+	loadTree(treePI, dataTree);
+	//var listPI = '@handler.values(FacetHandler.PLATFORM_INSTRUMENT_FACET)';
+	//setCheckTree(treePI, listPI, props);
+	</script>
+}
+
+

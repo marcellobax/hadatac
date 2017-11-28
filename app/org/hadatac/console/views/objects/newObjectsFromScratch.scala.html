@@ -1,0 +1,180 @@
+@(filename    : String,
+  da_uri      : String,
+  study       : org.hadatac.entity.pojo.Study,
+  oc          : org.hadatac.entity.pojo.ObjectCollection,
+  objTypeList : List[org.hadatac.entity.pojo.StudyObjectType])
+
+@import helper._
+@import org.hadatac.utils._
+@import org.hadatac.console.views.html._
+@import org.hadatac.console.controllers._
+@import org.hadatac.entity.pojo.Agent
+@import java.net.URLEncoder
+@import play._
+
+@main("New Objects") {
+
+  <div class="container">
+    <h4>New Objects for Object Collection @oc.getLabel()</h4>
+
+@if((oc.getHasScope() != null) ||
+   ((oc.getSpaceScopes() != null) && (oc.getSpaceScopes().size() > 0)) ||
+   ((oc.getTimeScopes() != null) && (oc.getTimeScopes().size() > 0))) {
+   <script type="text/javascript">
+     function checkform() {
+        var cansubmit = true;
+        var cansubmitScope = true;
+	
+	if (!document.getElementById('newQuantity').value || 
+            document.getElementById('newQuantity').value.length === 0) {
+	   cansubmit = false;
+	}
+
+	if (!document.getElementById('newMultiplier').value || 
+            document.getElementById('newMultiplier').value.length === 0) {
+	   cansubmitScope = false;
+	}
+
+	if (cansubmit) {
+	  document.getElementById('submitTotal').disabled = false;
+	} else {
+	  document.getElementById('submitTotal').disabled = 'disabled';
+	}
+
+	if (cansubmitScope) {
+	  document.getElementById('submitScope').disabled = false;
+	} else {
+	  document.getElementById('submitScope').disabled = 'disabled';
+	}
+
+     }
+  </script>
+} else {
+   <script type="text/javascript">
+     function checkform() {
+        var cansubmit = true;
+	
+	if (!document.getElementById('newQuantity').value || 
+            document.getElementById('newQuantity').value.length === 0) {
+	   cansubmit = false;
+	}
+
+	if (cansubmit) {
+	  document.getElementById('submitTotal').disabled = false;
+	} else {
+	  document.getElementById('submitTotal').disabled = 'disabled';
+	}
+
+     }
+  </script>
+}
+
+   <script type="text/javascript">
+     function replaceAll(str, find, replace) {
+        while (str.indexOf(find) > -1) {
+            str = str.replace(find, replace);
+        }
+        return str;
+     }
+  </script>
+
+    <form class="form-horizontal" name="newObjects" method="post" action="@org.hadatac.console.controllers.objects.routes.NewObjectsFromScratch.processForm(filename, da_uri, study.getUri(),oc.getUri())">
+	
+	<div class="form-group">
+		<label>Study:</label>
+		<input type="text" class="form-control col-sm-6" name="newStudyLabel" id="newStudyUri" 
+		       value="@study.getLabel()" onchange="checkform()" readonly >
+ 	</div>
+ 	<div class="form-group">
+		<label>Object Collection:</label>
+ 		<input type="text" class="form-control col-sm-6" name="newObjectCollectionLabel" id="newObjectCollectionUri" 
+		       value="@oc.getLabel()    [@oc.getObjectCollectionType().getLabel()]" onchange="checkform()" readonly>
+ 	</div>
+	<div class="form-group">
+	        <label>Object Type:</label>
+	        <select id="newType" class="form-control col-sm-2" name="newType" onchange="checkform()" readonly>
+		  <option value="@oc.getObjectCollectionType().getStudyObjectType().getUri()" selected>@oc.getObjectCollectionType().getStudyObjectType().getLabel()</option>
+	        </select>
+ 	</div>
+	<div class="form-group">
+	        <label>Default Label Prefix:</label>
+	        <input type="text" class="form-control col-sm-6" name="newLabelPrefix" id="newLabelPrefix" onchange="checkform()">
+	        </select>
+ 	</div>
+	<div id="rcorners">
+ 	   <div class="form-group">
+		<label>Total number of objects to be created:</label>
+ 		<input type="text" class="form-control col-sm-6" name="newQuantity" id="newQuantity" onchange="checkform()" >
+ 	   </div>
+     	   <input class="btn btn-success btn-sm" role="button" type="submit" id="submitTotal" value="Create Objects using total number" disabled /><br>
+        </div>
+
+	@if((oc.getHasScope() != null) ||
+	    ((oc.getSpaceScopes() != null) && (oc.getSpaceScopes().size() > 0)) ||
+	    ((oc.getTimeScopes() != null) && (oc.getTimeScopes().size() > 0))) {
+
+   	     <center><br><b>OR</b><br><br></center>
+     
+ 	     <div  id="rcorners">
+	        @if(oc.getHasScope() != null) {
+	           <div class="form-group">
+		      <label>Use domain collection:</label>
+ 		      <input type="checkbox"  name="useDomain" id="useDomain" 
+			     onchange="checkform()" >
+		      <ul>
+			  <li>@oc.getHasScope().getLabel() [@oc.getHasScope().getObjectUris().size() objects]</li>
+		      </ul>
+ 		   </div>
+		}
+     
+		@if(oc.getSpaceScopes() != null && oc.getSpaceScopes().size() > 0) {
+ 		   <div class="form-group">
+		      <label>Use location collection:</label>
+ 		      <input type="checkbox" name="useSpace" id="useSpace" 
+			     onchange="checkform()" >
+		      <ul>
+			  @for(space <- oc.getSpaceScopes()) {
+			     <li>@space.getLabel() [@space.getObjectUris().size() objects]</li>
+		          }
+		      <ul>
+ 	           </div>
+                }
+	    
+	        @if(oc.getTimeScopes() != null && oc.getTimeScopes().size() > 0) {
+		   <div class="form-group">
+		      <label>Use time collection(s):</label>
+ 		      <input type="checkbox" name="useTime" id="useTime" 
+			     onchange="checkform()" > 
+                      <ul>
+			 @for(time <- oc.getTimeScopes()) {
+		             <li>@time.getLabel() [@time.getObjectUris().size() objects]</li>
+		         }
+		      <ul>
+ 	           </div>
+	        }
+     
+ 		   <div class="form-group">
+		      <label>Include qualifiers in label:</label>
+ 		      <input type="checkbox" name="newLabelQualifier" id="newLabelQualifier" 
+			     onchange="checkform()" >
+ 	           </div>
+ 	        <div class="form-group">
+		    <label>Multiplier (number of times the product of contextual objects used):</label>
+ 		    <input type="text" class="form-control col-sm-6" name="newMultiplier" id="newMultiplier" onchange="checkform()" >
+ 		</div>
+
+		<input formaction="@org.hadatac.console.controllers.objects.routes.NewObjectsFromScratch.processScopeForm(filename, da_uri, URLEncoder.encode(study.getUri(),"UTF-8"),URLEncoder.encode(oc.getUri(),"UTF-8"))" 
+		       class="btn btn-success btn-sm" role="button" type="submit" id="submitScope" value="Create Objects using Scopes" disabled />
+
+             </div>
+        }
+	<br>
+	<div class="form-group">
+	    <br>
+	    <a href="@org.hadatac.console.controllers.objects.routes.ObjectManagement.indexNomsg(filename, da_uri, study.getUri(),oc.getUri())" 
+	       class="btn btn-primary" role="button">Back to Object Management</a>
+	</div>
+    </form>
+  </div>
+
+}

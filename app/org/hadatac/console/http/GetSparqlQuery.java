@@ -1,137 +1,50 @@
 package org.hadatac.console.http;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.StringWriter;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
-import java.util.Scanner;
 import java.util.TreeMap;
 
 import org.hadatac.console.models.SparqlQuery;
 import org.hadatac.utils.Collections;
-import org.apache.commons.io.IOUtils;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.DefaultHttpClient;
-import org.apache.http.impl.client.HttpClients;
+import org.hadatac.utils.NameSpaces;
+import org.apache.jena.query.Query;
+import org.apache.jena.query.QueryExecution;
+import org.apache.jena.query.QueryExecutionFactory;
+import org.apache.jena.query.QueryFactory;
+import org.apache.jena.query.QuerySolution;
+import org.apache.jena.query.ResultSet;
+import org.apache.jena.query.ResultSetFactory;
+import org.apache.jena.query.ResultSetRewindable;
+import org.apache.jena.query.ResultSetFormatter;
 
 import play.Play;
 
 public class GetSparqlQuery {
-
-    public StringBuffer sparql_query = new StringBuffer();
-
-    public TreeMap<String, StringBuffer> list_of_queries = new TreeMap<String, StringBuffer>();
-
     public String collection;
-    
-    private int numThings = 26;
-
-    public String[] thingTypes = new String[numThings];
     
     public GetSparqlQuery () {} 
 
-    //list_of_queries contains all the queries to execute
-    //this.sparql_query will be a query to return all documents in the last collection of
-    //collection_urls.
-    //this.sparql_query should NOT BE USED OUTSIDE OF THIS CLASS UNLESS YOU KNOW WHAT YOU'RE DOING
-    //I'm mostly talking to myself here.
-
-    // for SPARQL queries!
     public GetSparqlQuery (SparqlQuery query) {
     	this(Collections.METADATA_SPARQL, query);
     }
     
     public GetSparqlQuery (String collectionSource, SparqlQuery query) {
-        //addSparqlUrls();
-        addThingTypes();
         this.collection = Collections.getCollectionsName(collectionSource);
         System.out.println("Collection: " + collection);
-        
-        for (String tabName : thingTypes ){
-            this.sparql_query = new StringBuffer();
-            this.sparql_query.append(collection);
-            this.sparql_query.append("?q=");
-            String q = querySelector(tabName);
-
-            String quote = new String();
-            try {
-                this.sparql_query.append(URLEncoder.encode(q, "UTF-8"));
-                quote = URLEncoder.encode("\"", "UTF-8");
-            } catch (UnsupportedEncodingException e) {
-                e.printStackTrace();
-            }
-            
-            //System.out.println(tabName + " : " + this.sparql_query);
-            this.list_of_queries.put(tabName, this.sparql_query);
-        }
-    }// /getSolrQuery for SPARQL
+    }
 
     public GetSparqlQuery (SparqlQuery query, String tabName) {
     	this(Collections.METADATA_SPARQL, query, tabName);
     }
-    	// For SPARQL queries that only make one query (instead of for all tabs)
-    // Ideally, the above method should be depreciated in favor of this one, as we move
-    //    all thingType queries to their own separate pages.
+
     public GetSparqlQuery (String collectionSource, SparqlQuery query, String tabName) {
     	this.collection = Collections.getCollectionsName(collectionSource);
-
         System.out.println("Collection: " + collection);
-
-    	this.sparql_query = new StringBuffer();
-        this.sparql_query.append(collection);
-        this.sparql_query.append("?q=");
-        String q = querySelector(tabName);
-            
-        String quote = new String();
-        try {
-            this.sparql_query.append(URLEncoder.encode(q, "UTF-8"));
-            quote = URLEncoder.encode("\"", "UTF-8");
-        } catch (UnsupportedEncodingException e) {
-            e.printStackTrace();
-        }            
-        //System.out.println(tabName + " : " + this.sparql_query);
-        this.list_of_queries.put(tabName, this.sparql_query);
-    }// /getSolrQuery for SPARQL
-
-    // TYPES of THINGS in the metadata. These should be high-level concepts.
-    // If this list is updated, make sure each new thingtype has a corresponding
-    //  query in the method below, and that numThings is updated accordingly.
-    // (Until I make a more dynamic implementation for this....)
-    // IDEA: a config file that we can parse into Thing + query, with methods to check it dynamically?
-    public void addThingTypes(){
-        thingTypes[0]  = "Platforms";
-        thingTypes[1]  = "PlatformModels";
-        thingTypes[2]  = "Instruments";
-        thingTypes[3]  = "InstrumentModels";
-        thingTypes[4]  = "Detectors";
-        thingTypes[5]  = "DetectorModels";
-        thingTypes[6]  = "Entities";
-        thingTypes[7]  = "OrganizationsH";
-        thingTypes[8]  = "PeopleH";
-        thingTypes[9]  = "Characteristics";
-        thingTypes[10] = "Units";
-	    thingTypes[11] = "SensingPerspectives";
-	    thingTypes[12] = "EntityCharacteristics";
-	    thingTypes[13] = "Deployments";
-	    thingTypes[14] = "Demographics";
-	    thingTypes[15] = "BirthOutcomes";
-	    thingTypes[16] = "HousingCharacteristic";
-	    thingTypes[17] = "ATIDU";
-	    thingTypes[18] = "Anthropometry";
-	    thingTypes[19] = "PregnancyCharacteristic";
-	    thingTypes[20] = "Analytes";
-	    thingTypes[21] = "Alkaloids";
-	    thingTypes[22] = "Arsenic";
-	    thingTypes[23] = "Elements";
-	    thingTypes[24] = "OrganicAromatic";
-	    thingTypes[25] = "Indicators";
     }
     
     public String querySelector(String tabName){
-        // default query?
         String q = "SELECT * WHERE { ?s ?p ?o } LIMIT 10";
         switch (tabName){
             case "Platforms" : 
@@ -146,8 +59,8 @@ public class GetSparqlQuery {
                     "    ?platModel rdfs:label ?modelName ." +
                     "    ?platURI rdfs:label ?name ." + 
                     "    OPTIONAL { ?platURI vstoi:hasSerialNumber ?sn } ." + 
-                    "    OPTIONAL { ?platURI hasneto:hasFirstCoordinate ?lat ." +
-                    "               ?platURI hasneto:hasSecondCoordinate ?lng } ." +
+                    "    OPTIONAL { ?platURI hasco:hasFirstCoordinate ?lat ." +
+                    "               ?platURI hasco:hasSecondCoordinate ?lng } ." +
                     "}";
                 break;
             case "Instruments" : 
@@ -218,20 +131,31 @@ public class GetSparqlQuery {
             	q = "PREFIX prov: <http://www.w3.org/ns/prov#> " + 
             		"PREFIX foaf: <http://xmlns.com/foaf/0.1/> " +
             		"SELECT * WHERE { " +
-            		"  ?agent a foaf:Group . " + 
+            		"  ?agent a foaf:Organization . " + 
             		"  OPTIONAL { ?agent foaf:name ?name . } " + 
             		"  OPTIONAL { ?agent foaf:mbox ?email . } " + 
-            		"  OPTIONAL { ?agent foaf:member ?member . } " +
+            		"}";
+                break;
+            case "GroupsH" : 
+            	q = "PREFIX prov: <http://www.w3.org/ns/prov#> " + 
+            		"PREFIX foaf: <http://xmlns.com/foaf/0.1/> " +
+            		"PREFIX hadatac: <http://hadatac.org/ont/hadatac#> " + 
+            		"SELECT * WHERE { " +
+            		"  ?agent a foaf:Group . " + 
+            		"  OPTIONAL { ?agent foaf:name ?name . } " + 
+            		"  OPTIONAL { ?agent foaf:homepage ?page . } " + 
+            		"  OPTIONAL { ?agent hadatac:isMemberOfGroup ?group . } " + 
             		"}";
                 break;
             case "PeopleH" : 
             	q = "PREFIX prov: <http://www.w3.org/ns/prov#> " + 
-            		"PREFIX foaf: <http://xmlns.com/foaf/0.1/> " +
+            		"PREFIX foaf: <http://xmlns.com/foaf/0.1/> " + 
+            		"PREFIX hadatac: <http://hadatac.org/ont/hadatac#> " + 
             		"SELECT * WHERE { " +
             		"  ?agent a foaf:Person . " + 
             		"  OPTIONAL { ?agent foaf:name ?name . } " + 
             		"  OPTIONAL { ?agent foaf:mbox ?email . } " + 
-            		"  OPTIONAL { ?agent foaf:member ?member . } " +
+            		"  OPTIONAL { ?agent hadatac:isMemberOfGroup ?group . } " + 
             		"}";
                 break;
             case "DetectorModels" : 
@@ -283,14 +207,12 @@ public class GetSparqlQuery {
             case "Units" : 
                 q = "PREFIX rdfs:<http://www.w3.org/2000/01/rdf-schema#>" + 
                     "PREFIX owl: <http://www.w3.org/2002/07/owl#>" + 
-                    "PREFIX oboe: <http://ecoinformatics.org/oboe/oboe.1.0/oboe-core.owl#>" +
                     "PREFIX obo: <http://geneontology.org/GO.format.obo-1_2.shtml#>" +
-                    "SELECT ?id ?superModelName ?chara ?label WHERE { " + 
+                    "SELECT ?id ?superModelName ?comment ?label WHERE { " + 
                     "   ?id rdfs:subClassOf* obo:UO_0000000 . " + 
                     "   ?id rdfs:subClassOf ?superModelName .  " + 
                     "   OPTIONAL { ?id rdfs:label ?label } ." +
-                    "   OPTIONAL { ?id oboe:standardFor ?m .  " + 
-                    "              ?m oboe:ofCharacteristic ?chara } . " +
+                    "   OPTIONAL { ?id rdfs:comment ?comment } . " +
                     "}";
                 break;
             case "SensingPerspectives" : 
@@ -302,7 +224,7 @@ public class GetSparqlQuery {
                     " ?sp a vstoi:SensingPerspective . " +
                     " ?sp vstoi:perspectiveOf ?ofModel . " +
                     " ?ofModel rdfs:label ?ofModelName . " +
-                    " ?sp hasneto:hasPerspectiveCharacteristic ?chara ." +
+                    " ?sp hasco:hasPerspectiveCharacteristic ?chara ." +
                     " OPTIONAL { ?sp vstoi:hasAccuracyPercentage ?accpercent } ." +
                     " OPTIONAL { ?sp vstoi:hasAccuracyR2 ?accrtwo } ." +
                     " OPTIONAL { ?sp vstoi:hasOutputResolution ?outputres } ." +
@@ -332,7 +254,7 @@ public class GetSparqlQuery {
                     "SELECT ?uri ?platform ?platformName ?instrument ?instrumentName ?date WHERE { " + 
                     "   ?uri a vstoi:Deployment . " + 
                     "   ?uri vstoi:hasPlatform ?platform .  " + 
-                    "   ?uri hasneto:hasInstrument ?instrument .  " + 
+                    "   ?uri hasco:hasInstrument ?instrument .  " + 
                     "   ?uri prov:startedAtTime ?date .  " + 
                     "   OPTIONAL { ?platform rdfs:label ?platformName } ." + 
                     "   OPTIONAL { ?instrument rdfs:label ?instrumentName } ." + 
@@ -466,7 +388,7 @@ public class GetSparqlQuery {
             		"PREFIX rdfs:<http://www.w3.org/2000/01/rdf-schema#>" + 
             		"PREFIX skos: <http://www.w3.org/2004/02/skos/core#>" +
             		"SELECT ?id ?superId ?label ?comment WHERE { " + 
-                    "   ?id rdfs:subClassOf* chear:Alkaloid . " + 
+                    "   ?id rdfs:subClassOf* chear:AlkylPhosphatePesticideMetabolite . " + 
                     "   ?id rdfs:subClassOf ?superId .  " + 
                     "   OPTIONAL { ?id rdfs:label ?label } . " + 
                     " 	OPTIONAL { ?id skos:definition ?comment } . " +
@@ -527,7 +449,7 @@ public class GetSparqlQuery {
                         "PREFIX chear: <http://hadatac.org/ont/chear#>" + 
                         "PREFIX sio: <http://semanticscience.org/resource/>" +
                     	"SELECT DISTINCT ?modelName ?superModelName ?label ?comment WHERE { " + 
-                        "   ?modelName rdfs:subClassOf* chear:Indicator . " +
+                        "   ?modelName rdfs:subClassOf* hasco:Indicator . " +
                         "   ?modelName rdfs:subClassOf ?superModelName .  " + 
                         "   OPTIONAL { ?modelName rdfs:label ?label } . " + 
                         " 	OPTIONAL { ?modelName rdfs:comment ?comment } . " +
@@ -536,34 +458,29 @@ public class GetSparqlQuery {
             default :
             	q = "";
             	System.out.println("WARNING: no query for tab " + tabName);
-        }// /switch
-        return q;
-    } // /querySelector
-    
-    //Preconditions: The GetSparqlQuery object has been initialized with a Query object
-    //Inputs: None. Executes query based on the member string sparql_query.
-    //Output: Returns JSON in the form of a string. Currently does not handle http errors
-    //		  very gracefully. Need to change this.
-    //Postconditions: None
-    public String executeQuery(String tab) throws IllegalStateException, IOException{
-        CloseableHttpClient httpClient = HttpClients.createDefault();
-        //HttpGet get = new HttpGet(this.collection_urls.get(collection));
-        
-        Scanner in = null;
-        try {
-        	HttpClient client = new DefaultHttpClient();
-        	HttpGet request = new HttpGet(list_of_queries.get(tab).toString().replace(" ", "%20"));
-        	System.out.println(tab + " : " + list_of_queries.get(tab));
-        	request.setHeader("Accept", "application/sparql-results+json");
-        	HttpResponse response = client.execute(request);
-            StringWriter writer = new StringWriter();
-            IOUtils.copy(response.getEntity().getContent(), writer, "utf-8");
-            System.out.println("response: " + response);    
-            return writer.toString();
-        } finally
-        {
-            //in.close();
-            //request.close();
         }
-    } // /executeQuery()
+        return q;
+    }
+    
+    public String executeQuery(String tab) {
+    	ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+    	try {
+    		String queryString = NameSpaces.getInstance().printSparqlNameSpaceList() + 
+    				querySelector(tab);
+    		Query query = QueryFactory.create(queryString);
+    			
+    		QueryExecution qexec = QueryExecutionFactory.sparqlService(collection, query);
+    		ResultSet results = qexec.execSelect();
+    		
+    		ResultSetFormatter.outputAsJSON(outputStream, results);
+    		qexec.close();
+    		
+    		return outputStream.toString("UTF-8");
+    	} catch (Exception e) {
+			e.printStackTrace();
+		}
+    	
+    	return "";
+    }
 }
+

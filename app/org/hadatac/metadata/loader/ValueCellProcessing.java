@@ -10,11 +10,11 @@ import org.hadatac.utils.NameSpaces;
 
 public class ValueCellProcessing {
 	
-	boolean isFullURI(String str) {
+	private static boolean isFullURI(String str) {
 		return str.startsWith("http");
 	}
 	
-	boolean isAbbreviatedURI(String str) {
+	public static boolean isAbbreviatedURI(String str) {
 		if (str.trim().split(" ").length >= 2){
 			return false;
 		}
@@ -31,7 +31,7 @@ public class ValueCellProcessing {
 	 *  the method verifies if cellContent contains a set of URIs, which we call an object set. Returns true if 
 	 *  the content is regarded to be an object set.
 	 */
-	boolean isObjectSet (String cellContent) {
+	public static boolean isObjectSet (String cellContent) {
 
 		if (cellContent.startsWith("<") && (cellContent.endsWith(">"))){
 			cellContent = cellContent.replace("<", "").replace(">", "").replace("&", ", ");
@@ -54,7 +54,7 @@ public class ValueCellProcessing {
 		StringTokenizer st = new StringTokenizer(cellContent, ",");
 
 		// the string needs to have at least two tokens
-		String firstToken, secondToken;
+		String firstToken;
 		if (!st.hasMoreTokens()) {
 			return false;
 		}
@@ -62,7 +62,6 @@ public class ValueCellProcessing {
 		if (!st.hasMoreTokens()) {
 			return false;
 		}
-		secondToken = st.nextToken().trim();
 
 		// the first token (we could also test the second) needs to be an URI
 		return (isFullURI(firstToken) || isAbbreviatedURI(firstToken));
@@ -73,13 +72,12 @@ public class ValueCellProcessing {
 	 *  URI gets replaced by the name space's abbreviation. Otherwise, the string is returned wrapper
 	 *  around angular brackets.
 	 */
-	private String replaceNameSpace(String str) {
+	public static String replaceNameSpace(String str) {
 		String resp = str;
 	    for (Map.Entry<String, NameSpace> entry : NameSpaces.getInstance().table.entrySet()) {
 	        String abbrev = entry.getKey().toString();
 	        String nsString = entry.getValue().getName();
 	        if (str.startsWith(nsString)) {
-	        	System.out.println("REPLACE: " + resp + " / " + abbrev);
 	        	resp = str.replace(nsString, abbrev + ":");
 	        	return resp; 
 	        }
@@ -87,15 +85,17 @@ public class ValueCellProcessing {
 	    return "<" + str + ">";
 	}
 	
-	public String replaceNameSpaceEx(String str) {
+	public static String replaceNameSpaceEx(String str) {
+		if (null == str) {
+			return "";
+		}
 		String resp = str;
 	    for (Map.Entry<String, NameSpace> entry : NameSpaces.getInstance().table.entrySet()) {
 	        String abbrev = entry.getKey().toString();
 	        String nsString = entry.getValue().getName();
 	        if (str.startsWith(nsString)) {
-	        	System.out.println("REPLACE: " + resp + " / " + abbrev);
 	        	resp = str.replace(nsString, abbrev + ":");
-	        	return resp; 
+	        	return resp;
 	        }
 	    }
 	    return str;
@@ -106,13 +106,12 @@ public class ValueCellProcessing {
 	 *  abbreviation gets replaced by the name space's URI. Otherwise, the string is returned wrapper
 	 *  around angular brackets.
 	 */
-	public String replacePrefix(String str) {
+	public static String replacePrefix(String str) {
 		String resp = str;
 	    for (Map.Entry<String, NameSpace> entry : NameSpaces.table.entrySet()) {
 	        String abbrev = entry.getKey().toString();
 	        String nsString = entry.getValue().getName();
 	        if (str.startsWith(abbrev + ":")) {
-	        	System.out.println("REPLACE: " + resp + " / " + nsString);
 	        	resp = str.replace(abbrev + ":", nsString);
 	        	return resp; 
 	        }
@@ -121,11 +120,29 @@ public class ValueCellProcessing {
 	}
 	
 	/* 
+	 *  if the argument str starts with the abbreviation of one of the name spaces registered in NameSpaces.table, the
+	 *  abbreviation gets replaced by the name space's URI. Otherwise, the string is returned wrapper
+	 *  around angular brackets.
+	 */
+	public static String replacePrefixEx(String str) {
+		String resp = str;
+	    for (Map.Entry<String, NameSpace> entry : NameSpaces.table.entrySet()) {
+	        String abbrev = entry.getKey().toString();
+	        String nsString = entry.getValue().getName();
+	        if (str.startsWith(abbrev + ":")) {
+	        	resp = str.replace(abbrev + ":", nsString);
+	        	return resp; 
+	        }
+	    }
+	    return str;
+	}
+	
+	/* 
 	 *  check if the namespace in str is in the namamespace list (NameSpaces.table). 
 	 *  If not, it issues a warning message. A warning message is issue if the name 
 	 *  space used in the argument str is not registered in NameSpaces.table.
 	 */
-	public void validateNameSpace(String str) {
+	public static void validateNameSpace(String str) {
 		if (str.indexOf(':') <= 0)
 			return;
 		String abbrev = "";
@@ -140,7 +157,7 @@ public class ValueCellProcessing {
 		return;
 	}
 	
-	public String processSubjectValue(String subject) {
+	public static String processSubjectValue(String subject) {
 		if (isAbbreviatedURI(subject)) {
 			validateNameSpace(subject);
 			return (subject + "\n");
@@ -149,7 +166,7 @@ public class ValueCellProcessing {
 		return (replaceNameSpace(subject) + "\n");
 	}
 	
-	public String processObjectValue(String object) {
+	public static String processObjectValue(String object) {
 		// if abbreviated URI, just print it
 		if (isAbbreviatedURI(object)) { 
 			validateNameSpace(object);
@@ -167,7 +184,7 @@ public class ValueCellProcessing {
 		return "\"" + object + "\"";
 	}
 	
-	public String convertToWholeURI(String object){
+	public static String convertToWholeURI(String object){
     	if (isAbbreviatedURI(object)) {
     		validateNameSpace(object);
     		String resp = object;
@@ -175,7 +192,6 @@ public class ValueCellProcessing {
     	        String abbrev = entry.getKey().toString();
     	        String nsString = entry.getValue().getName();
     	        if (object.startsWith(abbrev + ":")) {
-    	        	System.out.println("REPLACE: " + resp + " / " + nsString);
     	        	resp = object.replace(abbrev + ":", nsString);
     	        	return resp;
     	        }
@@ -185,8 +201,7 @@ public class ValueCellProcessing {
     	return object;
     }
 	
-	public String exec(Cell cell, Vector<String> predicates) {
-
+	public static String exec(Cell cell, Vector<String> predicates) {
 		String clttl = "";
 		String cellValue = cell.getStringCellValue();
 		String predicate = predicates.get(cell.getColumnIndex());
@@ -215,7 +230,7 @@ public class ValueCellProcessing {
 		return clttl;
 	}
 	
-	public String execCellValue(String cellValue, String predicate) {
+	public static String execCellValue(String cellValue, String predicate) {
 		String clttl = "";
 
 		// cell has subject value

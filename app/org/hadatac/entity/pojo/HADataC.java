@@ -9,30 +9,27 @@ import org.apache.jena.query.ResultSet;
 import org.apache.jena.query.ResultSetFactory;
 import org.apache.jena.query.ResultSetRewindable;
 import org.apache.jena.rdf.model.Model;
-import org.hadatac.data.loader.util.Sparql;
-
-import play.Play;
+import org.hadatac.utils.Collections;
+import org.hadatac.utils.NameSpaces;
 
 public class HADataC {
 	
-	private String uri;
 	private String localName;
 	private String host;
 	
-	public Dataset dataset;
-	public DataCollection dataCollection;
-	public Deployment deployment;
+	private Dataset dataset;
+	private DataAcquisition dataAcquisition;
+	private Deployment deployment;
 	
 	public HADataC () {
 		dataset = null;
-		dataCollection = null;
+		dataAcquisition = null;
 		deployment = null;
 	}
 	
 	public String getLocalName() {
 		return localName;
 	}
-
 	public void setLocalName(String localName) {
 		this.localName = localName;
 	}
@@ -40,9 +37,29 @@ public class HADataC {
 	public String getHost() {
 		return host;
 	}
-
 	public void setHost(String host) {
 		this.host = host;
+	}
+	
+	public Dataset getDataset() {
+		return dataset;
+	}
+	public void setDataset(Dataset dataset) {
+		this.dataset = dataset;
+	}
+	
+	public DataAcquisition getDataAcquisition() {
+		return dataAcquisition;
+	}
+	public void setDataAcquisition(DataAcquisition dataAcquisition) {
+		this.dataAcquisition = dataAcquisition;
+	}
+
+	public Deployment getDeployment() {
+		return deployment;
+	}
+	public void setDeployment(Deployment deployment) {
+		this.deployment = deployment;
 	}
 	
 	public static HADataC find() {
@@ -53,7 +70,7 @@ public class HADataC {
 	}
 	
 	public static HADataC find(Model model) {
-		String queryString = Sparql.prefix
+		String queryString = NameSpaces.getInstance().printSparqlNameSpaceList() 
 				+ "SELECT ?kb ?host WHERE {\n"
 				+ "  ?kb a hadatac:KnowledgeBase .\n"
 				+ "  ?kb hadatac:hasHost ?host .\n"
@@ -81,60 +98,23 @@ public class HADataC {
 	}
 	
 	public String getDatasetKbUri() {
-		//return host + "/hadatac/" + deployment.getLocalName() + "/" + dataCollection.getLocalName() + "/" + dataset.getLocalName();
-		//return host + "/hadatac/dataset/" + dataset.getLocalName();
 		return dataset.getCcsvUri();
 	}
 	
-	public String getDataCollectionKbUri() {
-		//return host + "/hadatac/" + deployment.getLocalName() + "/" + dataCollection.getLocalName();
-		//return host + "/hadatac/datacollection/" + dataCollection.getLocalName();
-		return dataCollection.getCcsvUri();
+	public String getDataAcquisitionKbUri() {
+		return dataAcquisition.getCcsvUri();
 	}
 	
 	public String getDeploymentUri() {
-		//return host + "/hadatac/" + deployment.getLocalName();
-		//return host + "/hadatac/deployment/" + deployment.getLocalName();
 		return deployment.getUri();
 	}
 	
 	public String getMeasurementUri() {
-		//return host + "/hadatac/" + deployment.getLocalName();
 		return host + "/hadatac/measurement/";
 	}
 	
-	/*
-	public String getMeasurementURI(String uri) {
-		return host + "/hadatac/" + deployment.getLocalName() + "/" + dataCollection.getLocalName() + "/" + dataset.getLocalName() + "/" + measurements.get(uri).getLocalName();
-	}
-	
-	public String getDatasetKbURI() {
-		return host + "/hadatac/" + deployment.getLocalName() + "/" + dataCollection.getLocalName() + "/" + dataset.getLocalName();
-	}
-	
-	public String getDatasetPreambleURI() {
-		return dataset.getURI();
-	}
-	
-	public String getDataCollectionKbURI() {
-		return hostname + "/hadatac/" + deployment.getLocalName() + "/" + dataCollection.getLocalName();
-	}
-	
-	public String getDataCollectionPreambleURI() {
-		return dataCollection.getURI();
-	}
-	
-	public String getDeploymentKbURI() {
-		return hostname + "/hadatac/" + deployment.getLocalName();
-	}
-	
-	public String getDeploymentPreambleURI() {
-		return deployment.getURI();
-	}
-	*/
-	
 	public String getStaticMetadataSparqlURL() {
-		return host + ":7574/solr/store/sparql";
+		return Collections.getCollectionsName(Collections.METADATA_SPARQL);
 	}
 	
 	public String getDynamicMetadataURL() {

@@ -1,0 +1,30 @@
+@(das_uri : String, das: org.hadatac.console.models.DataAcquisitionSchemaForm)
+
+@import helper._
+@import org.hadatac.utils._
+@import org.hadatac.console.views.html._
+@import org.hadatac.console.views.html.schema._
+@import org.hadatac.console.controllers.schema._
+
+@main("Delete Data Acquisition Schema") {
+<div class="container">
+   <h3>Delete Data Acquisition Schema</h3>
+
+   <form class="form-horizontal" method="post" action="@org.hadatac.console.controllers.schema.routes.DeleteDAS.processForm(das_uri)">
+
+     <div class="form-group">
+       <label>URI : </label> @das.getUri() <br>         
+       <label>Name : </label> @das.getLabel()         
+     </div>
+     
+     <div class="form-group" class="col-sm-6 col-offset-3">
+	<input class="btn btn-success" role="button" type="submit" value="Delete" />
+     </div>
+
+    </form>   
+ 
+    <a href="@org.hadatac.console.controllers.schema.routes.DASManagement.index()" class="btn btn-primary" role="button">Back to DA Schema Management</a>
+
+</div>
+
+}

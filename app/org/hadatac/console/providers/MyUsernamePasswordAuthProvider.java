@@ -11,10 +11,11 @@ import org.hadatac.console.controllers.triplestore.UserManagement;
 import org.hadatac.console.models.LinkedAccount;
 import org.hadatac.console.models.TokenAction;
 import org.hadatac.console.models.TokenAction.Type;
-import org.hadatac.console.models.User;
+import org.hadatac.console.models.SysUser;
 
 import play.Application;
 import play.Logger;
+import play.Play;
 import play.data.Form;
 import play.data.validation.Constraints.Email;
 import play.data.validation.Constraints.MinLength;
@@ -128,10 +129,12 @@ public class MyUsernamePasswordAuthProvider
 	}
 
 	@Override
-	protected com.feth.play.module.pa.providers.password.UsernamePasswordAuthProvider.SignupResult signupUser(final MyUsernamePasswordAuthUser user) {
-		final User u = User.findByUsernamePasswordIdentity(user);
+	protected com.feth.play.module.pa.providers.password.UsernamePasswordAuthProvider.SignupResult 
+		signupUser(final MyUsernamePasswordAuthUser authUser) {
+		
+		final SysUser u = SysUser.findByUsernamePasswordIdentity(authUser);
 		if (u != null) {
-			if (u.emailValidated) {
+			if (u.getEmailValidated()) {
 				// This user exists, has its email validated and is active
 				return SignupResult.USER_EXISTS;
 			} else {
@@ -141,15 +144,14 @@ public class MyUsernamePasswordAuthProvider
 			}
 		}
 		// The user either does not exist or is inactive - create a new one
-		String userUri = UserManagement.getUriByEmail(user.getEmail());
+		String userUri = UserManagement.getUriByEmail(authUser.getEmail());
 		
-		@SuppressWarnings("unused")
-		final User newUser = User.create(user, userUri);
+		final SysUser newUser = SysUser.create(authUser, userUri);
 		// Usually the email should be verified before allowing login, however
 		// if you return
 		// return SignupResult.USER_CREATED;
 		// then the user gets logged in directly
-		if (newUser.emailValidated == true) {
+		if (newUser.getEmailValidated() == true) {
 			return SignupResult.USER_CREATED;
 		}
 		return SignupResult.USER_CREATED_UNVERIFIED;
@@ -158,24 +160,28 @@ public class MyUsernamePasswordAuthProvider
 	@Override
 	protected com.feth.play.module.pa.providers.password.UsernamePasswordAuthProvider.LoginResult loginUser(
 			final MyLoginUsernamePasswordAuthUser authUser) {
-		final User u = User.findByUsernamePasswordIdentity(authUser);
+		final SysUser u = SysUser.findByUsernamePasswordIdentity(authUser);
 		if (u == null) {
+			System.out.println("User not found!");
 			return LoginResult.NOT_FOUND;
 		} else {
-			if (!u.emailValidated) {
+			if (!u.getEmailValidated()) {
+				System.out.println("User unverified!");
 				return LoginResult.USER_UNVERIFIED;
 			} else {
-				for (final LinkedAccount acc : u.linkedAccounts) {
+				for (final LinkedAccount acc : u.getLinkedAccounts()) {
 					if (getKey().equals(acc.providerKey)) {
 						if (authUser.checkPassword(acc.providerUserId,
 								authUser.getPassword())) {
 							// Password was correct
+							System.out.println("User logged in!");
 							return LoginResult.USER_LOGGED_IN;
 						} else {
 							// if you don't return here,
 							// you would allow the user to have
 							// multiple passwords defined
 							// usually we don't want this
+							System.out.println("User password invalid!");
 							return LoginResult.WRONG_PASSWORD;
 						}
 					}
@@ -208,7 +214,6 @@ public class MyUsernamePasswordAuthProvider
 				login.getEmail());
 	}
 	
-
 	@Override
 	protected MyLoginUsernamePasswordAuthUser transformAuthUser(final MyUsernamePasswordAuthUser authUser, final Context context) {
 		return new MyLoginUsernamePasswordAuthUser(authUser.getEmail());
@@ -235,7 +240,7 @@ public class MyUsernamePasswordAuthProvider
 		final boolean isSecure = getConfiguration().getBoolean(
 				SETTING_KEY_VERIFICATION_LINK_SECURE);
 		final String url = routes.Signup.verify(token).absoluteURL(
-				ctx.request(), isSecure);
+				isSecure, Play.application().configuration().getString("hadatac.console.base_url"));
 
 		final Lang lang = Lang.preferred(ctx.request().acceptLanguages());
 		final String langCode = lang.code();
@@ -262,53 +267,78 @@ public class MyUsernamePasswordAuthProvider
 	
 	protected String generateVerificationRecordSolr(
 			final MyUsernamePasswordAuthUser user) {
-		return generateVerificationRecord(User.findByAuthUserIdentitySolr(user));
+		return generateVerificationRecord(SysUser.findByAuthUserIdentitySolr(user));
 	}
 
-	protected String generateVerificationRecord(final User user) {
+	protected String generateVerificationRecord(final SysUser user) {
 		final String token = generateToken();
 		// Do database actions, etc.
 		TokenAction.create(Type.EMAIL_VERIFICATION, token, user);
 		return token;
 	}
 
-	protected String generatePasswordResetRecord(final User u) {
+	protected String generatePasswordResetRecord(final SysUser u) {
 		final String token = generateToken();
 		TokenAction.create(Type.PASSWORD_RESET, token, u);
 		return token;
 	}
 
-	protected String getPasswordResetMailingSubject(final User user,
+	protected String getPasswordResetMailingSubject(final SysUser user,
 			final Context ctx) {
 		return Messages.get("playauthenticate.password.reset_email.subject");
 	}
 
 	protected Body getPasswordResetMailingBody(final String token,
-			final User user, final Context ctx) {
+			final SysUser user, final Context ctx) {
 
 		final boolean isSecure = getConfiguration().getBoolean(
 				SETTING_KEY_PASSWORD_RESET_LINK_SECURE);
 		final String url = routes.Signup.resetPassword(token).absoluteURL(
-				ctx.request(), isSecure);
+				isSecure, Play.application().configuration().getString("hadatac.console.base_url"));
 
 		final Lang lang = Lang.preferred(ctx.request().acceptLanguages());
 		final String langCode = lang.code();
 
 		final String html = getEmailTemplate(
 				"org.hadatac.console.views.html.account.email.password_reset", langCode, url,
-				token, user.name, user.email);
+				token, user.getName(), user.getEmail());
 		final String text = getEmailTemplate(
 				"org.hadatac.console.views.txt.account.email.password_reset", langCode, url, token,
-				user.name, user.email);
+				user.getName(), user.getEmail());
+
+		return new Body(text, html);
+	}
+	
+	protected Body getInvitationMailingBody(String user_name, String user_email, final Context ctx) {
+		final boolean isSecure = getConfiguration().getBoolean(
+				SETTING_KEY_VERIFICATION_LINK_SECURE);
+		final String url = routes.AuthApplication.signup().absoluteURL(
+				isSecure, Play.application().configuration().getString("hadatac.console.base_url"));
+
+		final Lang lang = Lang.preferred(ctx.request().acceptLanguages());
+		final String langCode = lang.code();
+
+		final String html = getEmailTemplate(
+				"org.hadatac.console.views.html.account.signup.email.invitation_email", langCode, url,
+				"", user_name, user_email);
+		final String text = getEmailTemplate(
+				"org.hadatac.console.views.txt.account.signup.email.invitation_email", langCode, url, 
+				"", user_name, user_email);
 
 		return new Body(text, html);
 	}
 
-	public void sendPasswordResetMailing(final User user, final Context ctx) {
+	public void sendPasswordResetMailing(final SysUser user, final Context ctx) {
 		final String token = generatePasswordResetRecord(user);
 		final String subject = getPasswordResetMailingSubject(user, ctx);
 		final Body body = getPasswordResetMailingBody(token, user, ctx);
 		sendMail(subject, body, getEmailName(user));
+	}
+	
+	public void sendInvitationMailing(String user_name, String user_email, final Context ctx) {
+		final String subject = "Invitation from HADatAc Team";
+		final Body body = getInvitationMailingBody(user_name, user_email, ctx);
+		sendMail(subject, body, user_email);
 	}
 
 	public boolean isLoginAfterPasswordReset() {
@@ -316,7 +346,7 @@ public class MyUsernamePasswordAuthProvider
 				SETTING_KEY_LINK_LOGIN_AFTER_PASSWORD_RESET);
 	}
 
-	protected String getVerifyEmailMailingSubjectAfterSignup(final User user,
+	protected String getVerifyEmailMailingSubjectAfterSignup(final SysUser user,
 			final Context ctx) {
 		return Messages.get("playauthenticate.password.verify_email.subject");
 	}
@@ -365,37 +395,36 @@ public class MyUsernamePasswordAuthProvider
 	}
 
 	protected Body getVerifyEmailMailingBodyAfterSignup(final String token,
-			final User user, final Context ctx) {
+			final SysUser user, final Context ctx) {
 
 		final boolean isSecure = getConfiguration().getBoolean(
 				SETTING_KEY_VERIFICATION_LINK_SECURE);
 		final String url = routes.Signup.verify(token).absoluteURL(
-				ctx.request(), isSecure);
+				isSecure, Play.application().configuration().getString("hadatac.console.base_url"));
 
 		final Lang lang = Lang.preferred(ctx.request().acceptLanguages());
 		final String langCode = lang.code();
 
 		final String html = getEmailTemplate(
 				"org.hadatac.console.views.html.account.email.verify_email", langCode, url, token,
-				user.name, user.email);
+				user.getName(), user.getEmail());
 		final String text = getEmailTemplate(
 				"org.hadatac.console.views.txt.account.email.verify_email", langCode, url, token,
-				user.name, user.email);
+				user.getName(), user.getEmail());
 
 		return new Body(text, html);
 	}
 
-	public void sendVerifyEmailMailingAfterSignup(final User user,
+	public void sendVerifyEmailMailingAfterSignup(final SysUser user,
 			final Context ctx) {
 
-		final String subject = getVerifyEmailMailingSubjectAfterSignup(user,
-				ctx);
+		final String subject = getVerifyEmailMailingSubjectAfterSignup(user, ctx);
 		final String token = generateVerificationRecord(user);
 		final Body body = getVerifyEmailMailingBodyAfterSignup(token, user, ctx);
 		sendMail(subject, body, getEmailName(user));
 	}
 
-	private String getEmailName(final User user) {
-		return getEmailName(user.email, user.name);
+	private String getEmailName(final SysUser user) {
+		return getEmailName(user.getEmail(), user.getName());
 	}
 }

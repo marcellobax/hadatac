@@ -2,7 +2,7 @@ package org.hadatac.console.controllers;
 
 import org.hadatac.console.models.TokenAction;
 import org.hadatac.console.models.TokenAction.Type;
-import org.hadatac.console.models.User;
+import org.hadatac.console.models.SysUser;
 import play.data.Form;
 import play.i18n.Messages;
 import play.mvc.Controller;
@@ -48,12 +48,9 @@ public class Signup extends Controller {
 
 	private static final Form<MyIdentity> FORGOT_PASSWORD_FORM = form(MyIdentity.class);
 
-	public static Result forgotPassword(final String email) {
+	public static Result forgotPassword() {
 		com.feth.play.module.pa.controllers.Authenticate.noCache(response());
 		Form<MyIdentity> form = FORGOT_PASSWORD_FORM;
-		if (email != null && !email.trim().isEmpty()) {
-			form = FORGOT_PASSWORD_FORM.fill(new MyIdentity(email));
-		}
 		return ok(password_forgot.render(form));
 	}
 
@@ -79,7 +76,7 @@ public class Signup extends Controller {
 							"playauthenticate.reset_password.message.instructions_sent",
 							email));
 
-			final User user = User.findByEmail(email);
+			final SysUser user = SysUser.findByEmail(email);
 			if (user != null) {
 				// yep, we have a user with this email that is active - we do
 				// not know if the user owning that account has requested this
@@ -87,7 +84,7 @@ public class Signup extends Controller {
 				final MyUsernamePasswordAuthProvider provider = MyUsernamePasswordAuthProvider
 						.getProvider();
 				// User exists
-				if (user.emailValidated) {
+				if (user.getEmailValidated()) {
 					provider.sendPasswordResetMailing(user, ctx());
 					// In case you actually want to let (the unknown person)
 					// know whether a user was found/an email was sent, use,
@@ -154,7 +151,7 @@ public class Signup extends Controller {
 			if (ta == null) {
 				return badRequest(no_token_or_invalid.render());
 			}
-			final User u = ta.targetUser;
+			final SysUser u = ta.targetUser;
 			try {
 				// Pass true for the second parameter if you want to
 				// automatically create a password and the exception never to
@@ -173,7 +170,7 @@ public class Signup extends Controller {
 						Messages.get("playauthenticate.reset_password.message.success.auto_login"));
 
 				return PlayAuthenticate.loginAndRedirect(ctx(),
-						new MyLoginUsernamePasswordAuthUser(u.email));
+						new MyLoginUsernamePasswordAuthUser(u.getEmail()));
 			} else {
 				// send the user to the login page
 				flash(AuthApplication.FLASH_MESSAGE_KEY,
@@ -199,8 +196,8 @@ public class Signup extends Controller {
 		if (ta == null) {
 			return badRequest(no_token_or_invalid.render());
 		}
-		final String email = ta.targetUser.email;
-		User.verify(ta.targetUser);
+		final String email = ta.targetUser.getEmail();
+		SysUser.verify(ta.targetUser);
 		flash(AuthApplication.FLASH_MESSAGE_KEY,
 				Messages.get("playauthenticate.verify_email.success", email));
 		if (AuthApplication.getLocalUser(session()) != null) {

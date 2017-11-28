@@ -85,7 +85,6 @@ public class Detector implements Comparable<Detector>  {
 			
 		while (resultsrw.hasNext()) {
 			QuerySolution soln = resultsrw.next();
-			//System.out.println("URI from main query: " + soln.getResource("uri").getURI());
 			Detector detector = find(soln.getResource("uri").getURI());
 			detectors.add(detector);
 		}			
@@ -104,7 +103,8 @@ public class Detector implements Comparable<Detector>  {
 		String queryString = "DESCRIBE <" + uri + ">";
 		Query query = QueryFactory.create(queryString);
 		QueryExecution qexec = QueryExecutionFactory.sparqlService(
-				Play.application().configuration().getString("hadatac.solr.triplestore") + "/store/sparql", query);
+				Play.application().configuration().getString("hadatac.solr.triplestore") 
+				+ Collections.METADATA_SPARQL, query);
 		model = qexec.execDescribe();
 		
 		detector = new Detector();
@@ -140,7 +140,7 @@ public class Detector implements Comparable<Detector>  {
 		    "     ?uri a ?detModel ." + 
 			"   } MINUS { " + 
 			"     ?dep_uri a vstoi:Deployment . " + 
-		    "     ?dep_uri hasneto:hasDetector ?uri .  " +
+		    "     ?dep_uri hasco:hasDetector ?uri .  " +
 			"     FILTER NOT EXISTS { ?dep_uri prov:endedAtTime ?enddatetime . } " + 
 			"    } " + 
 			"} " + 
@@ -171,7 +171,7 @@ public class Detector implements Comparable<Detector>  {
             "   ?detModel rdfs:subClassOf+ vstoi:Detector . " + 
 		    "   ?uri a ?detModel ." + 
 			"   ?dep_uri a vstoi:Deployment . " + 
-		    "   ?dep_uri hasneto:hasDetector ?uri .  " +
+		    "   ?dep_uri hasco:hasDetector ?uri .  " +
 			"   FILTER NOT EXISTS { ?dep_uri prov:endedAtTime ?enddatetime . } " + 
 			"} " + 
 			"ORDER BY DESC(?datetime) ";

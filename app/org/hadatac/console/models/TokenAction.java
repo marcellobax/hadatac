@@ -12,11 +12,13 @@ import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
+import org.hadatac.utils.Collections;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
 import org.joda.time.format.ISODateTimeFormat;
+import org.noggit.JSONUtil;
 
 import play.Play;
 import play.data.format.Formats;
@@ -48,27 +50,27 @@ public class TokenAction {
 	@Field("token")
 	public String token;
 
-	public User targetUser;
+	public SysUser targetUser;
 
 	public Type type;
 
-	@Formats.DateTime(pattern = "yyyy-MM-dd HH:mm:ss")
-	public Date created;
+	@Field("created")
+	public String created;
 	
 	public DateTime created_j;
 
-	@Formats.DateTime(pattern = "yyyy-MM-dd HH:mm:ss")
-	public Date expires;
+	@Field("expires")
+	public String expires;
 	
 	public DateTime expires_j;
 	
 	public String getTargetUserId() {
-		return targetUser.id_s;
+		return targetUser.getId();
 	}
 	
 	@Field("target_user_id")
 	public void setTargetUserId(String id_s) {
-		targetUser.id_s = id_s;
+		targetUser.setId(id_s);
 	}
 	
 	public String getType() {
@@ -111,7 +113,9 @@ public class TokenAction {
 	}
 	
 	public static TokenAction findByTokenSolr(final String token, final Type type) {
-		SolrClient solrClient = new HttpSolrClient(Play.application().configuration().getString("hadatac.solr.users") + "/token_action");
+		SolrClient solrClient = new HttpSolrClient.Builder(
+				Play.application().configuration().getString("hadatac.solr.users")
+				+ Collections.AUTHENTICATE_TOKENS).build();
     	SolrQuery solrQuery = new SolrQuery("token:" + token + " AND type:" + type.name());
     	TokenAction tokenAction = null;
 		
@@ -121,16 +125,16 @@ public class TokenAction {
 			SolrDocumentList list = queryResponse.getResults();
 			if (list.size() == 1) {
 				DateTime date;
-				tokenAction = new TokenAction();
 				SolrDocument doc = list.get(0);
+				tokenAction = new TokenAction();
 				tokenAction.id_s = doc.getFieldValue("id").toString();
 				tokenAction.token = doc.getFieldValue("token").toString();
 				tokenAction.setType(doc.getFieldValue("type").toString());
-				date = new DateTime((Date)doc.getFieldValue("created"));
+				date = new DateTime(doc.getFieldValue("created"));
 				tokenAction.setCreated(date.withZone(DateTimeZone.UTC).toString("EEE MMM dd HH:mm:ss zzz yyyy"));
-				date = new DateTime((Date)doc.getFieldValue("expires"));
+				date = new DateTime(doc.getFieldValue("expires"));
 				tokenAction.setExpires(date.withZone(DateTimeZone.UTC).toString("EEE MMM dd HH:mm:ss zzz yyyy"));
-				tokenAction.targetUser = User.findByIdSolr(doc.getFieldValue("target_user_id").toString());
+				tokenAction.targetUser = SysUser.findByIdSolr(doc.getFieldValue("target_user_id").toString());
 			}
 		} catch (Exception e) {
 			System.out.println("[ERROR] TokenAction.findByTokenSolr - Exception message: " + e.getMessage());
@@ -139,14 +143,16 @@ public class TokenAction {
     	return tokenAction;
 	}
 
-	public static void deleteByUser(final User u, final Type type) {
+	public static void deleteByUser(final SysUser u, final Type type) {
 		deleteByUserSolr(u, type);
 	}
 	
-	public static void deleteByUserSolr(final User u, final Type type) {
-		SolrClient solrClient = new HttpSolrClient(Play.application().configuration().getString("hadatac.solr.users") + "/token_action");
+	public static void deleteByUserSolr(final SysUser u, final Type type) {
+		SolrClient solrClient = new HttpSolrClient.Builder(
+				Play.application().configuration().getString("hadatac.solr.users") 
+				+ Collections.AUTHENTICATE_TOKENS).build();
 		try {
-			solrClient.deleteByQuery("target_user_id:" + u.id_s + " AND type:" + type.name());
+			solrClient.deleteByQuery("target_user_id:" + u.getId() + " AND type:" + type.name());
 			solrClient.commit();
 			solrClient.close();
 		} catch (SolrServerException | IOException e) {
@@ -156,11 +162,10 @@ public class TokenAction {
 
 	public boolean isValid() {
 		return this.expires_j.isAfterNow();
-		//return this.expires.after(new Date());
 	}
 
 	public static TokenAction create(final Type type, final String token,
-			final User targetUser) {
+			final SysUser targetUser) {
 		final TokenAction ua = new TokenAction();
 		ua.id_s = UUID.randomUUID().toString();
 		ua.targetUser = targetUser;
@@ -168,16 +173,18 @@ public class TokenAction {
 		ua.type = type;
 		final Date created = new Date();
 		final DateTime created_j = new DateTime();
-		ua.created = created;
+		ua.created = created.toString();
 		ua.created_j = created_j;
-		ua.expires = new Date(created.getTime() + VERIFICATION_TIME * 1000);
+		ua.expires = new Date(created.getTime() + VERIFICATION_TIME * 1000).toString();
 		ua.expires_j = new DateTime(created_j.getMillis() + VERIFICATION_TIME * 1000);
 		ua.save();
 		return ua;
 	}
 	
 	public void save() {
-		SolrClient solrClient = new HttpSolrClient(Play.application().configuration().getString("hadatac.solr.users") + "/token_action");
+		SolrClient solrClient = new HttpSolrClient.Builder(
+				Play.application().configuration().getString("hadatac.solr.users") 
+				+ Collections.AUTHENTICATE_TOKENS).build();
         
         try {
         	solrClient.addBean(this);
@@ -186,5 +193,24 @@ public class TokenAction {
 		} catch (Exception e) {
 			System.out.println("[ERROR] TokenAction.save - Exception message: " + e.getMessage());
 		}
+	}
+	
+	public static String outputAsJson() {
+		SolrClient solrClient = new HttpSolrClient.Builder(
+				Play.application().configuration().getString("hadatac.solr.users")
+				+ Collections.AUTHENTICATE_TOKENS).build();
+		String query = "*:*";
+    	SolrQuery solrQuery = new SolrQuery(query);
+    	
+    	try {
+			QueryResponse queryResponse = solrClient.query(solrQuery);
+			solrClient.close();
+			SolrDocumentList docs = queryResponse.getResults();
+			return JSONUtil.toJSON(docs);
+		} catch (Exception e) {
+			System.out.println("[ERROR] TokenAction.outputAsJson - Exception message: " + e.getMessage());
+		}
+    	
+    	return "";
 	}
 }

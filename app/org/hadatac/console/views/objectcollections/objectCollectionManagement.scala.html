@@ -1,0 +1,141 @@
+@(filename : String,
+  da_uri   : String,
+  study    : org.hadatac.entity.pojo.Study,
+  ocList   : List[org.hadatac.entity.pojo.ObjectCollection])
+
+@import helper._
+@import org.hadatac.console.views.html._
+@import org.hadatac.utils._
+
+@main("Object Management") {
+
+  <div class="container-fluid">
+    <h3>Management of Study <i><font color="darkBlue"> @study.getLabel()</font></i>'s Object Collections </h3>
+    
+    <h4>Management options</h4>
+
+    <div class="container-fluid">
+      <div class="row">
+         <div class="navbar-collapse collapse navbar-secondary">
+           <a href="@org.hadatac.console.controllers.objectcollections.routes.NewOC.index(filename, da_uri, study.getUri())" class="btn btn-primary" role="button">Create Object Collection</a>
+	   <a href="@org.hadatac.console.controllers.objectcollections.routes.OCForceField.index("full", filename, da_uri, study.getUri())" class="btn btn-primary" role="button">Visualize Object Graph</a>
+         </div>
+      </div>
+   </div>
+
+   <hr>
+
+    <div class="container-fluid">
+
+      <h4>Subject Groups</h4>
+   
+      <div id="rcorners">
+        <table class="table">
+            <thead>
+              <tr>
+                <!--  <th>Study URI</th>  -->
+                <th>Name</th>
+                <th>Description</th>
+                <th>Location Scope</th>
+                <th>Time Scope</th>
+		<th># Objects</th>
+                <th>Operations</th>
+              </tr>
+            </thead>
+            <tbody>
+	      @if(ocList != null) {
+                 @for(oc <- ocList){
+	            @oc_entry("subject", filename, da_uri, study, oc)
+                 }
+              }
+            </tbody>
+        </table>
+      </div>
+	
+      <h4>Sample Collections</h4>
+   
+      <div id="rcorners">
+        <table class="table">
+            <thead>
+              <tr>
+                <!--  <th>Study URI</th>  -->
+                <th>Name</th>
+                <th>Description</th>
+                <th>Domain Scope</th>
+                <th>Location Scope</th>
+                <th>Time Scope</th>
+		<th># Objects</th>
+                <th>Operations</th>
+              </tr>
+            </thead>
+            <tbody>
+	      @if(ocList != null) {
+                 @for(oc <- ocList){
+	            @oc_entry("sample", filename, da_uri, study, oc)
+                 }
+              }
+            </tbody>
+        </table>
+      </div>
+	
+      <h4>Location Collections</h4>
+   
+      <div id="rcorners">
+        <table class="table">
+            <thead>
+              <tr>
+                <!--  <th>Study URI</th>  -->
+                <th>Name</th>
+                <th>Description</th>
+                <th>Location Scope</th>
+		<th># Objects</th>
+                <th>Operations</th>
+              </tr>
+            </thead>
+            <tbody>
+	      @if(ocList != null) {
+                 @for(oc <- ocList){
+	            @oc_entry("location", filename, da_uri, study, oc)
+                 }
+              }
+            </tbody>
+        </table>
+      </div>
+	
+      <h4>Time Collections</h4>
+   
+      <div id="rcorners">
+        <table class="table">
+            <thead>
+              <tr>
+                <!--  <th>Study URI</th>  -->
+                <th>Name</th>
+                <th>Description</th>
+                <th>Time Scope</th>
+		<th># Objects</th>
+                <th>Operations</th>
+              </tr>
+            </thead>
+            <tbody>
+	      @if(ocList != null) {
+                 @for(oc <- ocList){
+	            @oc_entry("time", filename, da_uri, study, oc)
+                 }
+              }
+            </tbody>
+        </table>
+      </div>
+      <br>
+        @if(filename == null || filename.equals("") || da_uri == null || da_uri.equals("")) {
+              <a href="@org.hadatac.console.controllers.studies.routes.StudyManagement.index()" class="btn btn-primary" role="button">Back to Study Management</a>
+	} else {
+              <a href="@org.hadatac.console.controllers.annotator.routes.PrepareIngestion.create(filename, da_uri)" 
+		 class="btn btn-primary" role="button">Back to Prepare Ingestion</a>
+	}
+	
+
+    </div>
+ 
+  </div>
+
+}

@@ -12,6 +12,7 @@ import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
+import org.hadatac.utils.Collections;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.joda.time.format.DateTimeFormat;
@@ -27,6 +28,8 @@ public class ConsoleStore {
 	@Field("last_dynamic_metadata_id")
 	private long lastDynamicMetadataId;
 	
+	private DateTime timestamp;
+	
 	public int getId() {
 		return id;
 	}
@@ -39,12 +42,12 @@ public class ConsoleStore {
 	public void setLastDynamicMetadataId(long lastDynamicMetadataId) {
 		this.lastDynamicMetadataId = lastDynamicMetadataId;
 	}
-	private DateTime timestamp;
 	
 	public String getTimestamp() {
 		DateTimeFormatter formatter = ISODateTimeFormat.dateTime();
 		return formatter.withZone(DateTimeZone.UTC).print(timestamp);
 	}
+	
 	@Field("timestamp")
 	public void setTimestamp(String timestamp) {
 		DateTimeFormatter formatter = DateTimeFormat.forPattern("EEE MMM dd HH:mm:ss zzz yyyy");
@@ -53,8 +56,9 @@ public class ConsoleStore {
 	
 	public int save() {
 		try {
-			SolrClient client = new HttpSolrClient(Play.application().configuration().getString("hadatac.solr.data") + "/console_store");
-			this.timestamp = DateTime.now();
+			SolrClient client = new HttpSolrClient.Builder(
+					Play.application().configuration().getString("hadatac.solr.data") 
+					+ Collections.CONSOLE_STORE).build();
 			int status = client.addBean(this).getStatus();
 			client.commit();
 			client.close();
@@ -68,25 +72,25 @@ public class ConsoleStore {
 	public static ConsoleStore find() {
 		ConsoleStore consoleStore = null;
 		
-		SolrClient client = new HttpSolrClient(Play.application().configuration().getString("hadatac.solr.data") + "/console_store");
-        SolrQuery parameters = new SolrQuery();
-        parameters.set("q", "*:*");
-        parameters.set("sort", "last_dynamic_metadata_id desc");
-        parameters.set("start", "0");
-        parameters.set("rows", "1");
-        QueryResponse response;
+		SolrClient client = new HttpSolrClient.Builder(
+				Play.application().configuration().getString("hadatac.solr.data") 
+				+ Collections.CONSOLE_STORE).build();
+        SolrQuery query = new SolrQuery();
+        query.set("q", "*:*");
+        query.set("sort", "last_dynamic_metadata_id desc");
+        query.set("start", "0");
+        query.set("rows", "1");
         try {
-            response = client.query(parameters);
+        	QueryResponse response = client.query(query);
             client.close();
             SolrDocumentList list = response.getResults();
-            Iterator<SolrDocument> i = list.iterator();
-            if (i.hasNext()) {
-            	DateTime date;
-            	SolrDocument document = i.next();
+            Iterator<SolrDocument> iter = list.iterator();
+            if (iter.hasNext()) {
+            	SolrDocument document = iter.next();
             	consoleStore = new ConsoleStore();
             	consoleStore.setId(Integer.parseInt(document.getFieldValue("id").toString()));
             	consoleStore.setLastDynamicMetadataId(Long.parseLong(document.getFieldValue("last_dynamic_metadata_id").toString()));
-            	date = new DateTime((Date)document.getFieldValue("timestamp"));
+            	DateTime date = new DateTime((Date)document.getFieldValue("timestamp"));
             	consoleStore.setTimestamp(date.withZone(DateTimeZone.UTC).toString("EEE MMM dd HH:mm:ss zzz yyyy"));
             }
         } catch (SolrServerException | IOException e) {

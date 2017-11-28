@@ -18,18 +18,17 @@ public class Clean extends Controller {
 
 	@Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
     public static Result clean(String oper) {
-	return ok(clean.render(oper));
+		return ok(clean.render(oper));
     }
 
 	@Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
     public static Result postClean(String oper) {
-	return ok(clean.render(oper));
+		return ok(clean.render(oper));
     }
 
     public static String playClean(String oper) {
     	String result = "";
     	if (oper.equals("metadata")) {
-    		NameSpaces.getInstance();
     		MetadataContext metadata = new 
 	    		 MetadataContext("user", 
 	    		                 "password",
@@ -37,31 +36,43 @@ public class Clean extends Controller {
 	    		                  false);
     		result = metadata.clean(Feedback.WEB);
     	} else if (oper.equals("usergraph")) {
-    		NameSpaces.getInstance();
     		PermissionsContext permission = new 
 	    		 PermissionsContext("user", 
 	    		                 "password",
 	    		                  Play.application().configuration().getString("hadatac.solr.permissions"), 
 	    		                  false);
     		result = permission.clean(Feedback.WEB);
+    		
+    		DataContext userCollection = new 
+    				DataContext("user", 
+   	    		             	"password",
+   	    		             	Play.application().configuration().getString("hadatac.solr.users"), 
+   	    		             	false);
+       		result = userCollection.cleanDataUsers(Feedback.WEB);
+       		
+       		DataContext linkedCollection = new 
+       				DataContext("user", 
+      	    		            "password",
+      	    		            Play.application().configuration().getString("hadatac.solr.data"), 
+      	    		            false);
+          	result = linkedCollection.cleanDataAccounts(Feedback.WEB);
     	} else if (oper.equals("collections")) {
-    		NameSpaces.getInstance();
     		DataContext collection = new 
 	    		 DataContext("user", 
 	    		             "password",
 	    		             Play.application().configuration().getString("hadatac.solr.data"), 
 	    		             false);
-    		result = collection.cleanDataCollections(Feedback.WEB);
+    		result = collection.cleanDataAcquisitions(Feedback.WEB);
     	} else if (oper.equals("acquisitions")) {
-    		NameSpaces.getInstance();
     		DataContext acquisition = new 
 	    		 DataContext("user", 
 	    		             "password",
 	    		             Play.application().configuration().getString("hadatac.solr.data"), 
 	    		             false);
-    		result = acquisition.cleanDataAcquisitions(Feedback.WEB);
-    	}
-	     return result;
+    		result = acquisition.cleanAcquisitionData(Feedback.WEB);
+    	} 
+	    
+    	return result;
    }
 
 }

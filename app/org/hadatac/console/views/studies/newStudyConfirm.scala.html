@@ -1,0 +1,44 @@
+@(std      : org.hadatac.entity.pojo.Study,
+  filename : String,
+  da_uri   : String)
+
+@import helper._
+@import org.hadatac.utils._
+@import org.hadatac.console.views.html._
+@import org.hadatac.console.controllers._
+@import org.hadatac.console.controllers.schema._
+@import org.hadatac.metadata.loader.ValueCellProcessing
+
+@main("New Study") {
+
+    <h2>Create Study</h2>
+    
+    <h3>Listing below shows values for new Study</h3>
+
+    <div class="container-fluid">
+       <ul>
+         <li><b>URI:</b> @ValueCellProcessing.replaceNameSpaceEx(std.getUri())</li>
+         <li><b>Type:</b> @ValueCellProcessing.replaceNameSpaceEx(std.getType())</li>
+         <li><b>Short Name:</b> @std.getLabel()</li>
+         <li><b>Project:</b> @std.getProject()</li>
+         <li><b>Description:</b> @std.getComment()</li>
+         <li><b>External Source:</b> @std.getExternalSource()</li>
+         <li><b>Agent:</b> @if(std.getAgent() != null) { @std.getAgent().getName() }</li>
+         <li><b>Institution:</b> @if(std.getInstitution() != null) { @std.getInstitution().getName() }</li>
+	 <li><b>Start Date/Time</b>: @if(std.getStartedAt() != null) { @std.getStartedAt() }</li>
+	 <li><b>End Date/Time</b>: @if(std.getEndedAt() != null) { @std.getEndedAt() }</li>
+       </ul>
+       
+       <br>
+       @if(filename.equals("") || da_uri.equals("")) {
+          <a href="@org.hadatac.console.controllers.studies.routes.StudyManagement.index()" class="btn btn-primary" 
+	     role="button">Back to Study Management</a>
+       } else {
+    	  <a href="@org.hadatac.console.controllers.annotator.routes.PrepareIngestion.create(filename,da_uri)" 
+	     class="btn btn-primary" role="button">Back to Prepare Ingestion</a>
+       }
+	  
+    </div>
+    
+    }
+    

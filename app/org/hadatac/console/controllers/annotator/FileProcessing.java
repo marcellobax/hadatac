@@ -20,6 +20,7 @@ import org.hadatac.console.models.SparqlQueryResults;
 import org.hadatac.console.models.CSVAnnotationHandler;
 import org.hadatac.console.models.TripleDocument;
 
+import play.mvc.BodyParser;
 import play.mvc.Controller;
 import play.mvc.Result;
 import play.mvc.Http.MultipartFormData;
@@ -38,20 +39,26 @@ import be.objectify.deadbolt.java.actions.Restrict;
 
 public class FileProcessing extends Controller {
 
-	private static final String UPLOAD_PATH = "tmp/uploads/";
+    private static final String UPLOAD_PATH = "tmp/uploads/";
 
-	private static String[] extractFields(String str) {
-		String line = str.substring(0, str.indexOf('\n'));
-		System.out.println("Line: [" + line + "]");
-		StringTokenizer st = new StringTokenizer(line, ",");
-		String[] fields = new String[st.countTokens()];
-		int pos = 0;
-		while (st.hasMoreElements()) {
-			fields[pos++] = (String)(st.nextElement());
-		}
-		return fields;
+    public static String[] extractFields(String str) {
+	if (str == null || str.equals("")) {
+	    return null;
 	}
-	
+	String line = str;
+	if (str.indexOf('\n') >= 0) {
+	    line = str.substring(0, str.indexOf('\n'));
+	}
+	System.out.println("Line: [" + line + "]");
+	StringTokenizer st = new StringTokenizer(line, ",");
+	String[] fields = new String[st.countTokens()];
+	int pos = 0;
+	while (st.hasMoreElements()) {
+	    fields[pos++] = (String)(st.nextElement());
+	}
+	return fields;
+    }
+
     public static SparqlQueryResults getQueryResults(String tabName) {
 	    SparqlQuery query = new SparqlQuery();
         GetSparqlQuery query_submit = new GetSparqlQuery(query);
@@ -61,13 +68,14 @@ public class FileProcessing extends Controller {
             query_json = query_submit.executeQuery(tabName);
             System.out.println("query_json = " + query_json);
             theResults = new SparqlQueryResults(query_json, false);
-        } catch (IllegalStateException | IOException | NullPointerException e1) {
+        } catch (IllegalStateException | NullPointerException e1) {
             e1.printStackTrace();
         }
 		return theResults;
 	}
-	
+
     @Restrict(@Group(AuthApplication.DATA_OWNER_ROLE))
+    @BodyParser.Of(value = BodyParser.MultipartFormData.class, maxLength = 500 * 1024 * 1024)
     public static Result uploadFile(String handler_json) {
     	try {
 			handler_json = URLDecoder.decode(handler_json, "UTF-8");
@@ -75,18 +83,16 @@ public class FileProcessing extends Controller {
 			e.printStackTrace();
 		}
     	System.out.println(handler_json);
-    	
-    	ObjectMapper mapper = new ObjectMapper();    	
+
+    	ObjectMapper mapper = new ObjectMapper();
     	CSVAnnotationHandler handler = null;
     	try {
 			handler = mapper.readValue(handler_json, CSVAnnotationHandler.class);
 		} catch (Exception e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 			return ok (uploadCSV.render(null, "fail", "Lost deployment information."));
-		} 
-    	
-    	//System.out.println("uploadFile CALLED!");
+		}
+
         MultipartFormData body = request().body().asMultipartFormData();
 		FilePart uploadedfile = body.getFile("pic");
 		if (uploadedfile != null) {
@@ -124,7 +130,7 @@ public class FileProcessing extends Controller {
 	     	   return ok(measurementsSpec.render(handler, getQueryResults("Entities"), getQueryResults("Units")));
 		} else {
 		   return ok (uploadCSV.render(null, "fail", "Error uploading file. Please try again."));
-		} 
-    } 
-    
+		}
+    }
+
 }

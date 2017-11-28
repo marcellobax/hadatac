@@ -1,5 +1,6 @@
 package org.hadatac.console.models;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -7,17 +8,21 @@ import java.util.UUID;
 
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.beans.Field;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.response.QueryResponse;
+import org.apache.solr.client.solrj.response.UpdateResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
+import org.hadatac.utils.Collections;
+import org.noggit.JSONUtil;
 
 import play.Play;
 
 import com.feth.play.module.pa.user.AuthUser;
 
-public class LinkedAccount extends AppModel {
+public class LinkedAccount {
 
 	/**
 	 * 
@@ -29,31 +34,33 @@ public class LinkedAccount extends AppModel {
 	@Field("id")
 	public String id_s;
 
-	public User user;
-
 	@Field("provider_user_id")
 	public String providerUserId;
 	
 	@Field("provider_key")
 	public String providerKey;
 	
+	public SysUser user;
+	
 	public String getUserId() {
-		return user.id_s;
+		return user.getId();
 	}
 	
 	@Field("user_id")
 	public void setUserId(String id) {
-		user = User.findByIdSolr(id);
+		user = SysUser.findByIdSolr(id);
 	}
 
-	public static LinkedAccount findByProviderKey(final User user, String key) {
+	public static LinkedAccount findByProviderKey(final SysUser user, String key) {
 		return findByProviderKeySolr(user, key);
 	}
 	
-	public static LinkedAccount findByProviderKeySolr(final User user, String key) {
+	public static LinkedAccount findByProviderKeySolr(final SysUser user, String key) {
 		LinkedAccount account = null;
-		SolrClient solrClient = new HttpSolrClient(Play.application().configuration().getString("hadatac.solr.users") + "/linked_account");
-    	SolrQuery solrQuery = new SolrQuery("user_id:" + user.id_s + " AND provider_key:" + key);
+		SolrClient solrClient = new HttpSolrClient.Builder(
+				Play.application().configuration().getString("hadatac.solr.users") 
+				+ Collections.AUTHENTICATE_ACCOUNTS).build();
+    	SolrQuery solrQuery = new SolrQuery("user_id:" + user.getId() + " AND provider_key:" + key);
     	
     	try {
 			QueryResponse queryResponse = solrClient.query(solrQuery);
@@ -70,10 +77,12 @@ public class LinkedAccount extends AppModel {
     	return account;
 	}
 	
-	public static List<LinkedAccount> findByIdSolr(final User user) {
+	public static List<LinkedAccount> findByIdSolr(final SysUser user) {
 		List<LinkedAccount> accounts = new ArrayList<LinkedAccount>(); 
-		SolrClient solrClient = new HttpSolrClient(Play.application().configuration().getString("hadatac.solr.users") + "/linked_account");
-    	SolrQuery solrQuery = new SolrQuery("user_id:" + user.id_s);
+		SolrClient solrClient = new HttpSolrClient.Builder(
+				Play.application().configuration().getString("hadatac.solr.users")
+				+ Collections.AUTHENTICATE_ACCOUNTS).build();
+    	SolrQuery solrQuery = new SolrQuery("user_id:" + user.getId());
     	
     	try {
 			QueryResponse queryResponse = solrClient.query(solrQuery);
@@ -91,6 +100,25 @@ public class LinkedAccount extends AppModel {
 		}
     	
     	return accounts;
+	}
+	
+	public static String outputAsJson() {
+		SolrClient solrClient = new HttpSolrClient.Builder(
+				Play.application().configuration().getString("hadatac.solr.users")
+				+ Collections.AUTHENTICATE_ACCOUNTS).build();
+		String query = "*:*";
+    	SolrQuery solrQuery = new SolrQuery(query);
+    	
+    	try {
+			QueryResponse queryResponse = solrClient.query(solrQuery);
+			solrClient.close();
+			SolrDocumentList docs = queryResponse.getResults();
+			return JSONUtil.toJSON(docs);
+		} catch (Exception e) {
+			System.out.println("[ERROR] LinkedAccount.outputAsJson - Exception message: " + e.getMessage());
+		}
+    	
+    	return "";
 	}
 
 	public static LinkedAccount create(final AuthUser authUser) {
@@ -115,8 +143,9 @@ public class LinkedAccount extends AppModel {
 	}
 	
 	public void save() {
-		SolrClient solrClient = new HttpSolrClient(Play.application().configuration().getString("hadatac.solr.users") + "/linked_account");
-		
+		SolrClient solrClient = new HttpSolrClient.Builder(
+				Play.application().configuration().getString("hadatac.solr.users") 
+				+ Collections.AUTHENTICATE_ACCOUNTS).build();
         try {
         	solrClient.addBean(this);
 			solrClient.commit();
@@ -124,6 +153,26 @@ public class LinkedAccount extends AppModel {
 		} catch (Exception e) {
 			System.out.println("[ERROR] LinkedAccount.save - Exception message: " + e.getMessage());
 		}
+	}
+	
+	public int delete() {
+		try {
+			SolrClient solr = new HttpSolrClient.Builder(
+					Play.application().configuration().getString("hadatac.solr.users") 
+					+ Collections.AUTHENTICATE_ACCOUNTS).build();
+			UpdateResponse response = solr.deleteById(this.id_s);
+			solr.commit();
+			solr.close();
+			return response.getStatus();
+		} catch (SolrServerException e) {
+			System.out.println("[ERROR] LinkedAccount.delete() - SolrServerException message: " + e.getMessage());
+		} catch (IOException e) {
+			System.out.println("[ERROR] LinkedAccount.delete() - IOException message: " + e.getMessage());
+		} catch (Exception e) {
+			System.out.println("[ERROR] LinkedAccount.delete() - Exception message: " + e.getMessage());
+		}
+		
+		return -1;
 	}
 	
 	private static LinkedAccount convertSolrDocumentToLinkedAccount(SolrDocument doc) {

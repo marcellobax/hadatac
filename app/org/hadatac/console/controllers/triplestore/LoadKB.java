@@ -3,37 +3,35 @@ package org.hadatac.console.controllers.triplestore;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
-import java.io.IOException;
 import java.io.InputStream;
 import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.hadatac.console.controllers.AuthApplication;
-import org.hadatac.console.views.html.datacollections.dataCollectionManagement;
 import org.hadatac.console.views.html.triplestore.*;
-import org.hadatac.entity.pojo.DataCollection;
+import org.hadatac.data.model.ParsingResult;
+import org.hadatac.console.controllers.triplestore.routes;
 import org.hadatac.console.models.LabKeyLoginForm;
-import org.hadatac.console.models.User;
+import org.hadatac.console.models.SysUser;
+import org.hadatac.metadata.loader.LabkeyDataHandler;
 import org.hadatac.metadata.loader.MetadataContext;
 import org.hadatac.metadata.loader.SpreadsheetProcessing;
 import org.hadatac.metadata.loader.TripleProcessing;
+import org.hadatac.utils.ConfigProp;
 import org.hadatac.utils.Feedback;
 import org.hadatac.utils.NameSpaces;
 import org.hadatac.utils.State;
 import org.labkey.remoteapi.CommandException;
-import org.labkey.remoteapi.Connection;
-
-import com.ning.http.client.AsyncHandler.STATE;
 
 import be.objectify.deadbolt.java.actions.Group;
 import be.objectify.deadbolt.java.actions.Restrict;
 import play.Play;
 import play.data.Form;
+import play.mvc.BodyParser;
 import play.mvc.Controller;
 import play.mvc.Http.MultipartFormData;
 import play.mvc.Http.MultipartFormData.FilePart;
@@ -71,87 +69,57 @@ public class LoadKB extends Controller {
 	     return message;
 	}
     
-    public static Properties loadConfig() {
-    	Properties prop = new Properties();
-		try {
-			InputStream is = LoadKB.class.getClassLoader().getResourceAsStream("labkey.config");
-			prop.load(is);
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		return prop;
-    }
-    
     @Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
-    public static Result playLoadLabkeyDataAcquisition(String oper, String content, String folder, 
-    		List<String> list_names, LabKeyLoginForm auth) {
+    public static Result playLoadLabkeyDataAcquisition(String oper, String content, 
+    		String folder, String study_uri) {
     	System.out.println(String.format("Batch loading data acquisition from \"/%s\"...", folder));
     	
-    	List<String> final_names = new LinkedList<String>();
-    	String user_name = "";
-        String password = "";
-        LabKeyLoginForm data = null;
-    	if(oper.equals("init")){
-    		Form<LabKeyLoginForm> form = Form.form(LabKeyLoginForm.class).bindFromRequest();
-    		data = form.get();
-            user_name = data.getUserName();
-            password = data.getPassword();
-            final_names.addAll(list_names);
-    	}
-    	else if(oper.contains("load")){
-    		user_name = auth.getUserName();
-            password = auth.getPassword();
-            data = auth;
-            for(String name : list_names){
-            	if(name.equals("DataAcquisition")){
-            		final_names.add(name);
-            	}
-            }
-    	}
+        String user_name = session().get("LabKeyUserName");
+        String password = session().get("LabKeyPassword");
+        if (user_name == null || password == null) {
+        	redirect(routes.LoadKB.loadLabkeyKB("init", content));
+        }
         
-        Properties prop = loadConfig();
         String path = String.format("/%s", folder);
-        String site = prop.getProperty("site");
-    	
-        NameSpaces.getInstance();
+        String site = ConfigProp.getPropertyValue("labkey.config", "site");
+        
     	try {
-    		String message = TripleProcessing.importDataAcquisition(site, user_name, password, path, final_names);
-    	} catch(CommandException e) {
-    		if(e.getMessage().equals("Unauthorized")){
-    			return ok(syncLabkey.render(Form.form(LabKeyLoginForm.class), "login_failed", content, ""));
+    		final SysUser user = AuthApplication.getLocalUser(Controller.session());
+    		String ownerUri = UserManagement.getUriByEmail(user.getEmail());
+    		if (null == ownerUri) {
+    			return badRequest("Cannot find corresponding URI for the current logged in user!");
+    		}
+    		ParsingResult result = TripleProcessing.importDataAcquisition(
+    				site, user_name, password, path, study_uri);
+    		if (result.getStatus() != 0) {
+    			return ok(labkeyLoadingResult.render(folder, oper, content, result.getMessage()));
+    		}
+    	} catch (CommandException e) {
+    		if (e.getMessage().equals("Unauthorized")) {
+    			return ok(syncLabkey.render("login_failed",
+    					routes.LoadKB.playLoadLabkeyFolders("init", content).url(), ""));
     		}
     	}
     	
-    	State state = new State(State.ALL);
-    	final User user = AuthApplication.getLocalUser(Controller.session());
-		String ownerUri = UserManagement.getUriByEmail(user.email);
-    	List<DataCollection> theResults = DataCollection.find(ownerUri, state);
-        return ok(dataCollectionManagement.render(state, theResults));
+    	return redirect(org.hadatac.console.controllers.dataacquisitionmanagement.
+    			routes.DataAcquisitionManagement.index(State.ACTIVE));
     }
     
     @Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
     public static Result playLoadLabkeyKB(String oper, String content, String folder, 
-    		List<String> list_names, LabKeyLoginForm auth) {
+    		List<String> list_names) {
     	System.out.println(String.format("Batch loading metadata from \"/%s\"...", folder));
     	
     	List<String> final_names = new LinkedList<String>();
-    	String user_name = "";
-        String password = "";
-        LabKeyLoginForm data = null;
+    	String user_name = session().get("LabKeyUserName");
+        String password = session().get("LabKeyPassword");
+        if (user_name == null || password == null) {
+        	redirect(routes.LoadKB.loadLabkeyKB("init", content));
+        }
     	if(oper.equals("init")){
-    		Form<LabKeyLoginForm> form = Form.form(LabKeyLoginForm.class).bindFromRequest();
-    		data = form.get();
-            user_name = data.getUserName();
-            password = data.getPassword();
             final_names.addAll(list_names);
     	}
-    	else if(oper.contains("load")){
-    		user_name = auth.getUserName();
-            password = auth.getPassword();
-            data = auth;
-            
+    	else if(oper.contains("load")){            
             if(oper.equals("load_instance_data")){
             	// get request value from submitted form
                 Map<String, String[]> name_map = request().body().asFormUrlEncoded();
@@ -163,10 +131,9 @@ public class LoadKB extends Controller {
             	System.out.println(final_names.size());
             }
     	}
-        
-        Properties prop = loadConfig();
+
         String path = String.format("/%s", folder);
-        String site = prop.getProperty("site");
+        String site = ConfigProp.getPropertyValue("labkey.config", "site");
     	
     	NameSpaces.getInstance();
     	MetadataContext metadata = new 
@@ -181,23 +148,28 @@ public class LoadKB extends Controller {
     				site, user_name, password, path, final_names);
     	} catch(CommandException e) {
     		if(e.getMessage().equals("Unauthorized")){
-    			return ok(syncLabkey.render(Form.form(LabKeyLoginForm.class), "login_failed", content, ""));
+    			return ok(syncLabkey.render("login_failed",
+    					routes.LoadKB.playLoadLabkeyFolders("init", content).url(), ""));
     		}
     	}
     	
-    	return ok(syncLabkey.render(Form.form(LabKeyLoginForm.class), oper, content, message));
+    	return ok(syncLabkey.render(oper,
+    			routes.LoadKB.playLoadLabkeyFolders("init", content).url(),
+    			message));
     }
     
     @Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
-    public static Result playLoadLabkeyListContent(String oper, String content, LabKeyLoginForm auth, 
-    		String folder, String list_name) {
+    public static Result playLoadLabkeyListContent(
+    		String oper, String content, String folder, String list_name) {
     	System.out.println(String.format("Loading data from list \"%s\"...", list_name));
     	
-        String user_name = auth.getUserName();
-        String password = auth.getPassword();
-        
-        Properties prop = loadConfig();
-        String site = prop.getProperty("site");
+        String user_name = session().get("LabKeyUserName");
+        String password = session().get("LabKeyPassword");
+        if (user_name == null || password == null) {
+        	redirect(routes.LoadKB.loadLabkeyKB("init", content));
+        }
+
+        String site = ConfigProp.getPropertyValue("labkey.config", "site");
         String path = String.format("/%s", folder);
     	
     	NameSpaces.getInstance();
@@ -215,61 +187,62 @@ public class LoadKB extends Controller {
     				Feedback.WEB, oper, metadata, site, user_name, password, path, loading_list);
     	} catch(CommandException e) {
     		if(e.getMessage().equals("Unauthorized")){
-    			return ok(syncLabkey.render(Form.form(LabKeyLoginForm.class), "login_failed", content, ""));
+    			return ok(syncLabkey.render("login_failed",
+    					routes.LoadKB.playLoadLabkeyFolders("init", content).url(), ""));
     		}
     	}
     	
-    	return ok(labkeyLoadingResult.render(auth, folder, oper, content, message));
+    	return ok(labkeyLoadingResult.render(folder, oper, content, message));
     }
     
     @Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
-    public static Result playLoadLabkeyFolders(String oper, LabKeyLoginForm auth, String content) {
+    public static Result playLoadLabkeyFolders(String oper, String content) {
     	System.out.println("Looking up LabKey folders...");
     	
-    	String user_name = "";
-        String password = "";
-        LabKeyLoginForm data = null;
-    	if(oper.equals("init")){
-    		Form<LabKeyLoginForm> form = Form.form(LabKeyLoginForm.class).bindFromRequest();
-    		data = form.get();
-            user_name = data.getUserName();
-            password = data.getPassword();
-    	}
-    	else if(oper.equals("load")){
-    		user_name = auth.getUserName();
-            password = auth.getPassword();
-            data = auth;
-    	}
-    	
-        Properties prop = loadConfig();
-        String site = prop.getProperty("site");
+    	String user_name = session().get("LabKeyUserName");
+        String password = session().get("LabKeyPassword");
+        if (user_name == null || password == null) {
+        	Form<LabKeyLoginForm> form = Form.form(LabKeyLoginForm.class).bindFromRequest();
+            user_name = form.get().getUserName();
+            password = form.get().getPassword();
+        }
+        
+        String site = ConfigProp.getPropertyValue("labkey.config", "site");
         String path = "/";
     	
     	List<String> folders = null;
     	try {
-    		folders = TripleProcessing.getLabKeyFolders(site, user_name, password, path); 		
-    		folders.sort(new Comparator<String>() {
-    			@Override
-				public int compare(String o1, String o2) {
-					return o1.compareTo(o2);
-				}
-			});
+    		folders = TripleProcessing.getLabKeyFolders(site, user_name, password, path);
+    		if (folders != null) {
+                folders.sort(new Comparator<String>() {
+        			@Override
+    				public int compare(String o1, String o2) {
+    					return o1.compareTo(o2);
+    				}
+    			});
+    		}
     	} catch(CommandException e) {
     		if(e.getMessage().equals("Unauthorized")){
-    			return ok(syncLabkey.render(Form.form(LabKeyLoginForm.class), "login_failed", content, ""));
+    			return ok(syncLabkey.render("login_failed", 
+    					routes.LoadKB.playLoadLabkeyFolders("init", content).url(), ""));
     		}
     	}
-    	return ok(getLabkeyFolders.render(data, folders, content));
+    	
+		session().put("LabKeyUserName", user_name);
+        session().put("LabKeyPassword", password);
+    	
+    	return ok(getLabkeyFolders.render(folders, content));
     }
     
     @Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
-    public static Result playLoadLabkeyLists(LabKeyLoginForm auth, String folder, String content) {
+    public static Result playLoadLabkeyLists(String folder, String content) {
     	System.out.println(String.format("Accessing LabKey lists of %s", folder));
-        String user_name = auth.getUserName();
-        String password = auth.getPassword();
-        
-        Properties prop = loadConfig();
-        String site = prop.getProperty("site");
+        String user_name = session().get("LabKeyUserName");
+        String password = session().get("LabKeyPassword");
+        if (user_name == null || password == null) {
+        	redirect(routes.LoadKB.loadLabkeyKB("init", "knowledge"));
+        }
+        String site = ConfigProp.getPropertyValue("labkey.config", "site");
         String path = String.format("/%s", folder);
     	
     	List<String> retMetadataLists = null;
@@ -295,23 +268,58 @@ public class LoadKB extends Controller {
     		}
     	} catch(CommandException e) {
     		if(e.getMessage().equals("Unauthorized")){
-    			return ok(syncLabkey.render(Form.form(LabKeyLoginForm.class), "login_failed", content, ""));
+    			return ok(syncLabkey.render("login_failed",
+    					routes.LoadKB.playLoadLabkeyFolders("init", content).url(), ""));
     		}
     	}
-    	return ok(getLabkeyLists.render(auth, folder, content, retMetadataLists, retDataLists));
+    	return ok(getLabkeyLists.render(folder, content, retMetadataLists, retDataLists));
     }
     
     @Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
     public static Result loadLabkeyKB(String oper, String content) {
-    	return ok(syncLabkey.render(Form.form(LabKeyLoginForm.class), oper, content, ""));
+    	if (session().get("LabKeyUserName") == null && session().get("LabKeyPassword") == null) {
+    		return ok(syncLabkey.render(oper,
+    				routes.LoadKB.playLoadLabkeyFolders("init", content).url(), ""));
+    	}
+    	
+    	return playLoadLabkeyFolders(oper, content);
     }
     
     @Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
     public static Result postLoadLabkeyKB(String oper, String content) {
-    	return ok(syncLabkey.render(Form.form(LabKeyLoginForm.class), oper, content, ""));
+    	return loadLabkeyKB(oper, content);
     }
     
     @Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+    public static Result logInLabkey(String nextCall) {
+        return ok(syncLabkey.render("init", routes.LoadKB.postLogInLabkey(nextCall).url(), ""));
+    }
+    
+    @Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+    public static Result postLogInLabkey(String nextCall) {
+    	Form<LabKeyLoginForm> form = Form.form(LabKeyLoginForm.class).bindFromRequest();
+    	String site = ConfigProp.getPropertyValue("labkey.config", "site");
+        String path = "/";
+        String user_name = form.get().getUserName();
+        String password = form.get().getPassword();
+    	LabkeyDataHandler loader = new LabkeyDataHandler(
+    			site, user_name, password, path);
+    	try {
+    		loader.checkAuthentication();
+    		session().put("LabKeyUserName", user_name);
+            session().put("LabKeyPassword", password);
+    	} catch(CommandException e) {
+    		if(e.getMessage().equals("Unauthorized")){
+    			return ok(syncLabkey.render("login_failed", 
+    					nextCall, ""));
+    		}
+    	}
+    	
+    	return redirect(nextCall);
+    }
+    
+    @Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+    @BodyParser.Of(value = BodyParser.MultipartFormData.class, maxLength = 500 * 1024 * 1024)
     public static Result uploadFile(String oper) {
     	System.out.println("uploadFile CALLED!");
     	MultipartFormData body = request().body().asMultipartFormData();
@@ -328,7 +336,6 @@ public class LoadKB extends Controller {
     				try {
     					FileUtils.writeByteArrayToFile(newFile, byteFile);
     				} catch (Exception e) {
-    					// TODO Auto-generated catch block
     					e.printStackTrace();
     				}
     				try {
@@ -349,6 +356,7 @@ public class LoadKB extends Controller {
     }
     
     @Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+    @BodyParser.Of(value = BodyParser.MultipartFormData.class, maxLength = 500 * 1024 * 1024)
     public static Result uploadTurtleFile(String oper) {
     	System.out.println("uploadTurtleFile CALLED!");
     	MultipartFormData body = request().body().asMultipartFormData();

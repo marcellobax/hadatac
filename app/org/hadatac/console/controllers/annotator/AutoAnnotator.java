@@ -1,388 +1,436 @@
 package org.hadatac.console.controllers.annotator;
 
 import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.FileInputStream;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
-import java.net.URISyntaxException;
-import java.net.URL;
-import java.net.URLDecoder;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
+import java.util.Date;
 import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+
+import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.io.IOUtils;
+import org.hadatac.entity.pojo.Credential;
 import org.hadatac.console.controllers.AuthApplication;
-import org.hadatac.console.controllers.dataacquisition.LoadCCSV;
-import org.hadatac.console.controllers.triplestore.LoadKB;
-import org.hadatac.console.controllers.triplestore.UserManagement;
-import org.hadatac.console.http.DataAcquisitionSchemaQueries;
-import org.hadatac.console.http.DeploymentQueries;
-import org.hadatac.console.models.CSVAnnotationHandler;
-import org.hadatac.console.models.SparqlQueryResults;
-import org.hadatac.console.models.TripleDocument;
-import org.hadatac.console.views.html.annotator.auto_ccsv;
-import org.hadatac.data.api.DataFactory;
-import org.hadatac.entity.pojo.DataCollection;
+import org.hadatac.console.controllers.annotator.routes;
+import org.hadatac.console.controllers.annotator.AnnotationLog;
+import org.hadatac.console.http.ResumableUpload;
+import org.hadatac.console.models.AssignOptionForm;
+import org.hadatac.console.models.LabKeyLoginForm;
+import org.hadatac.console.models.SysUser;
+import org.hadatac.console.views.html.annotator.*;
+import org.hadatac.console.views.html.triplestore.*;
+import org.hadatac.console.views.html.*;
+import org.hadatac.entity.pojo.DataFile;
+import org.hadatac.entity.pojo.Measurement;
+import org.hadatac.entity.pojo.DataAcquisition;
+import org.hadatac.entity.pojo.User;
+import org.hadatac.metadata.loader.LabkeyDataHandler;
 import org.hadatac.metadata.loader.ValueCellProcessing;
-import org.hadatac.utils.NameSpaces;
+import org.hadatac.utils.ConfigProp;
+import org.hadatac.utils.Feedback;
 import org.hadatac.utils.State;
+import org.labkey.remoteapi.CommandException;
 
 import be.objectify.deadbolt.java.actions.Group;
 import be.objectify.deadbolt.java.actions.Restrict;
-import play.Play;
+import play.twirl.api.Html;
+import play.data.Form;
 import play.mvc.Controller;
 import play.mvc.Result;
+import play.mvc.BodyParser;
+import play.mvc.Http.MultipartFormData.FilePart;
 
 public class AutoAnnotator extends Controller {
-	
+
 	@Restrict(@Group(AuthApplication.DATA_OWNER_ROLE))
-    public static Result index() {
-		Properties prop = new Properties();
-		try {
-			InputStream is = LoadKB.class.getClassLoader().getResourceAsStream("autoccsv.config");
-			prop.load(is);
-			is.close();
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
+	public static Result index() {		
+		final SysUser user = AuthApplication.getLocalUser(session());
+
+		List<DataFile> proc_files = null;
+		List<DataFile> unproc_files = null;
+
+		String path_proc = ConfigProp.getPathProc();
+		String path_unproc = ConfigProp.getPathUnproc();
+
+		if (user.isDataManager()) {
+			proc_files = DataFile.findAll(State.PROCESSED);
+			unproc_files = DataFile.findAll(State.UNPROCESSED);
+			DataFile.includeUnrecognizedFiles(path_unproc, unproc_files);
+			DataFile.includeUnrecognizedFiles(path_proc, proc_files);
+		} else {
+			proc_files = DataFile.find(user.getEmail(), State.PROCESSED);
+			unproc_files = DataFile.find(user.getEmail(), State.UNPROCESSED);
 		}
-		
-		ArrayList<String> proc_files = new ArrayList<String>();
-		ArrayList<String> unproc_files = new ArrayList<String>();
-		String path_proc = prop.getProperty("path_proc");
-		String path_unproc = prop.getProperty("path_unproc");
-		
-		File folder = new File(path_proc);
-		if (!folder.exists()){
-			folder.mkdirs();
-	    }
-		File[] listOfFiles = folder.listFiles();
-		for (int i = 0; i < listOfFiles.length; i++) {
-			if (listOfFiles[i].isFile()) {
-				proc_files.add(listOfFiles[i].getName());
-			}
-		}
-		folder = new File(path_unproc);
-		if (!folder.exists()){
-			folder.mkdirs();
-	    }
-		listOfFiles = folder.listFiles();
-		for (int i = 0; i < listOfFiles.length; i++) {
-			if (listOfFiles[i].isFile()) {
-				unproc_files.add(listOfFiles[i].getName());
-			}
-		}
-		
+
+		DataFile.filterNonexistedFiles(path_proc, proc_files);
+		DataFile.filterNonexistedFiles(path_unproc, unproc_files);
+
 		boolean bStarted = false;
-		if(prop.getProperty("auto").equals("on")){
+		if (ConfigProp.getPropertyValue("autoccsv.config", "auto").equals("on")) {
 			bStarted = true;
 		}
-		System.out.println(bStarted);
 
-		return ok(auto_ccsv.render(unproc_files, proc_files, bStarted));
+		return ok(auto_ccsv.render(unproc_files, proc_files, bStarted, user.isDataManager()));
 	}
-	
+
 	@Restrict(@Group(AuthApplication.DATA_OWNER_ROLE))
-    public static Result postIndex() {
+	public static Result postIndex() {
 		return index();
 	}
+
+	@Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+	public static Result assignFileOwner(String ownerEmail, String selectedFile) {	
+		return ok(assignOption.render(User.getUserEmails(),
+				routes.AutoAnnotator.processOwnerForm(ownerEmail, selectedFile),
+				"Owner", 
+				"Selected File", 
+				selectedFile));
+	}
+
+	@Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+	public static Result postAssignFileOwner(String ownerEmail, String selectedFile) {
+		return assignFileOwner(ownerEmail, selectedFile);
+	}
+
+	@Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+	public static Result processOwnerForm(String ownerEmail, String selectedFile) {
+		Form<AssignOptionForm> form = Form.form(AssignOptionForm.class).bindFromRequest();
+		AssignOptionForm data = form.get();
+
+		if (form.hasErrors()) {
+			System.out.println("HAS ERRORS");
+			return badRequest(assignOption.render(User.getUserEmails(),
+					routes.AutoAnnotator.processOwnerForm(ownerEmail, selectedFile),
+					"Owner",
+					"Selected File",
+					selectedFile));
+		} else {
+			DataFile file = DataFile.findByName(ownerEmail, selectedFile);
+			if (file == null) {
+				file = new DataFile();
+				file.setFileName(selectedFile);
+				file.setOwnerEmail(AuthApplication.getLocalUser(session()).getEmail());
+				file.setProcessStatus(false);
+				file.setUploadTime(new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date()));
+			}
+			file.setOwnerEmail(data.getOption());
+			file.save();
+			return redirect(routes.AutoAnnotator.index());
+		}
+	}
+
+	@Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+	public static Result assignDataAcquisition(String dataAcquisitionUri, String selectedFile) {
+		List<String> dataAcquisitionURIs = new ArrayList<String>();
+		DataAcquisition.findAll().forEach((da) -> dataAcquisitionURIs.add(
+				ValueCellProcessing.replaceNameSpaceEx(da.getUri())));
+
+		return ok(assignOption.render(dataAcquisitionURIs,
+				routes.AutoAnnotator.processDataAcquisitionForm(dataAcquisitionUri, selectedFile),
+				"Data Acquisition",
+				"Selected File",
+				selectedFile));
+	}
+
+	@Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+	public static Result postAssignDataAcquisition(String dataAcquisitionUri, String selectedFile) {
+		return assignDataAcquisition(dataAcquisitionUri, selectedFile);
+	}
+
+	@Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+	public static Result processDataAcquisitionForm(String dataAcquisitionUri, String selectedFile) {
+		Form<AssignOptionForm> form = Form.form(AssignOptionForm.class).bindFromRequest();
+		AssignOptionForm data = form.get();
+
+		List<String> dataAcquisitionURIs = new ArrayList<String>();
+		DataAcquisition.findAll().forEach((da) -> dataAcquisitionURIs.add(
+				ValueCellProcessing.replaceNameSpaceEx(da.getUri())));
+
+		if (form.hasErrors()) {
+			System.out.println("HAS ERRORS");
+			return badRequest(assignOption.render(dataAcquisitionURIs,
+					routes.AutoAnnotator.processDataAcquisitionForm(dataAcquisitionUri, selectedFile),
+					"Data Acquisition",
+					"Selected File",
+					selectedFile));
+		} else {
+			DataFile file = DataFile.findByName(dataAcquisitionUri, selectedFile);
+			if (file == null) {
+				file = new DataFile();
+				file.setFileName(selectedFile);
+				file.setOwnerEmail(AuthApplication.getLocalUser(session()).getEmail());
+				file.setProcessStatus(false);
+				file.setUploadTime(new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date()));
+			}
+			file.setDataAcquisitionUri(ValueCellProcessing.replacePrefixEx(data.getOption()));
+			file.save();
+			return redirect(routes.AutoAnnotator.index());
+		}
+	}
+
+	@Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+	public static Result toggleAutoAnnotator() {
+		if (ConfigProp.getPropertyValue("autoccsv.config", "auto").equals("on")) {
+			ConfigProp.setPropertyValue("autoccsv.config", "auto", "off");
+			System.out.println("Turning auto-annotation off");
+		}
+		else {
+			ConfigProp.setPropertyValue("autoccsv.config", "auto", "on");
+			System.out.println("Turning auto-annotation on");
+		}
+
+		return redirect(routes.AutoAnnotator.index());
+	}
+
+	@Restrict(@Group(AuthApplication.DATA_OWNER_ROLE))
+	public static Result downloadTemplates() {
+		return ok(download_templates.render());
+	}
+
+	@Restrict(@Group(AuthApplication.DATA_OWNER_ROLE))
+	public static Result postDownloadTemplates() {
+		return postDownloadTemplates();
+	}
+
+	@Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+	public static Result setLabKeyCredentials() {
+		return ok(syncLabkey.render("init", routes.AutoAnnotator.
+				postSetLabKeyCredentials().url(), ""));
+	}
+
+	@Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+	public static Result postSetLabKeyCredentials() {
+		Form<LabKeyLoginForm> form = Form.form(LabKeyLoginForm.class).bindFromRequest();
+		String site = ConfigProp.getPropertyValue("labkey.config", "site");
+		String path = "/";
+		String user_name = form.get().getUserName();
+		String password = form.get().getPassword();
+		LabkeyDataHandler loader = new LabkeyDataHandler(
+				site, user_name, password, path);
+		try {
+			loader.checkAuthentication();
+			Credential cred = new Credential();
+			cred.setUserName(user_name);
+			cred.setPassword(password);
+			cred.save();
+		} catch(CommandException e) {
+			if(e.getMessage().equals("Unauthorized")){
+				return ok(syncLabkey.render("login_failed", "", ""));
+			}
+		}
+
+		return ok(main.render("Results", "", 
+				new Html("<h3>Your provided credentials are valid and saved!</h3>")));
+	}
+
+	private static String getProperDataAcquisitionUri(String fileName) {
+		String base_name = FilenameUtils.getBaseName(fileName);
+		List<DataAcquisition> da_list = DataAcquisition.findAll();
+		for(DataAcquisition dc : da_list){
+			String abbrevUri = ValueCellProcessing.replaceNameSpaceEx(dc.getUri());
+			String qname = abbrevUri.split(":")[1];
+			if(base_name.startsWith(qname)){
+				return dc.getUri();
+			}
+		}
+		return null;
+	}
+
+	@Restrict(@Group(AuthApplication.DATA_OWNER_ROLE))
+	public static Result checkAnnotationLog(String file_name) {
+		AnnotationLog log = AnnotationLog.find(file_name);
+		if (null == log) {
+			return ok(annotation_log.render(Feedback.print(Feedback.WEB, "")));
+		}
+		else {
+			return ok(annotation_log.render(Feedback.print(Feedback.WEB, log.getLog())));
+		}
+	}
+
+	@Restrict(@Group(AuthApplication.DATA_OWNER_ROLE))
+	public static Result moveDataFile(String file_name) {			
+		final SysUser user = AuthApplication.getLocalUser(session());
+		DataFile dataFile = null;
+		if (user.isDataManager()) {
+			dataFile = DataFile.findByName(null, file_name);
+		}
+		else {
+			dataFile = DataFile.findByName(user.getEmail(), file_name);
+		}
+		if (null == dataFile) {
+			return badRequest("You do NOT have the permission to operate this file!");
+		}
+
+		AnnotationLog log = new AnnotationLog(file_name);
+		log.addline(Feedback.println(Feedback.WEB, String.format("[OK] Moved file %s to unprocessed folder", file_name)));
+		log.save();
+
+		Measurement.delete(dataFile.getDatasetUri());
+		List<DataAcquisition> dataAcquisitions = DataAcquisition.findAll();
+		for (DataAcquisition da : dataAcquisitions) {
+			if (da.containsDataset(dataFile.getDatasetUri())) {
+				da.setNumberDataPoints(Measurement.getNumByDataAcquisition(da));
+				da.save();
+			}
+		}
+		
+		dataFile.delete();
+		dataFile.setProcessStatus(false);
+		dataFile.save();
+
+		String path_proc = ConfigProp.getPathProc();
+		String path_unproc = ConfigProp.getPathUnproc();
+		File destFolder = new File(path_unproc);
+		if (!destFolder.exists()){
+			destFolder.mkdirs();
+		}
+		File file = new File(path_proc + "/" + file_name);
+		file.renameTo(new File(destFolder + "/" + file_name));
+		deleteAddedTriples(file);
+
+		return redirect(routes.AutoAnnotator.index());
+	}
 	
 	@Restrict(@Group(AuthApplication.DATA_OWNER_ROLE))
-    public static Result toggleAutoAnnotator(List<String> unproc_files, 
-    		                                 List<String> proc_files) {
-		System.out.println("Toggling...");
-		boolean bStarted = false;
-		
-		Properties prop = new Properties();
-		try {
-			InputStream is = LoadKB.class.getClassLoader().getResourceAsStream("autoccsv.config");
-			prop.load(is);
-			is.close();
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		
-		if(prop.getProperty("auto").equals("on")){
-			prop.setProperty("auto", "off");
-			bStarted = false;
-			System.out.println("off");
-		}
-		else if(prop.getProperty("auto").equals("off")){
-			prop.setProperty("auto", "on");
-			bStarted = true;
-			System.out.println("on");
-		}
-		URL url = LoadKB.class.getClassLoader().getResource("autoccsv.config");
-		try {
-			prop.store(new FileOutputStream(new File(url.toURI())), null);
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		} catch (URISyntaxException e) {
-			e.printStackTrace();
-		}
-		
-		return ok(auto_ccsv.render(unproc_files, proc_files, bStarted));
+	public static void deleteAddedTriples(File file){
+		System.out.println("Deleting the added triples from the moving file ...");
+		// use the new function to reverse the triple generation
+		/**
+		 * Model model = createModel(rows);
+            Model defaultModel = accessor.getModel();
+            defaultModel.remove(model);
+		 */
 	}
-	
-	public static void autoAnnotate() {
-		Properties prop = new Properties();
-		try {
-			InputStream is = LoadKB.class.getClassLoader().getResourceAsStream("autoccsv.config");
-			prop.load(is);
-			is.close();
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
+
+	@Restrict(@Group(AuthApplication.DATA_OWNER_ROLE))
+	public static Result downloadDataFile(String file_name, boolean isProcessed) {		
+		String path = ""; 
+		if(isProcessed){
+			path = ConfigProp.getPathProc();
+		} else {
+			path = ConfigProp.getPathUnproc();
 		}
-		
-		if(prop.getProperty("auto").equals("off")){
-			return;
+		return ok(new File(path + "/" + file_name));
+	}
+
+	@Restrict(@Group(AuthApplication.DATA_OWNER_ROLE))
+	public static Result deleteDataFile(String file_name, boolean isProcessed) {
+		final SysUser user = AuthApplication.getLocalUser(session());
+		DataFile dataFile = null;
+		if (user.isDataManager()) {
+			dataFile = DataFile.findByName(null, file_name);
 		}
-		
-		String path_proc = prop.getProperty("path_proc");
-		String path_unproc = prop.getProperty("path_unproc");
-		
-		File folder = new File(path_unproc);
-		if (!folder.exists()){
-			folder.mkdirs();
-	    }
-		File[] listOfFiles = folder.listFiles();
-		for (int i = 0; i < listOfFiles.length; i++) {
-			if (listOfFiles[i].isFile()) {
-				String file_name = listOfFiles[i].getName();
-				if(annotateCSVFile(file_name)){
-					//Move the file to the folder for processed files
-					File destFolder = new File(path_proc);
-					if (!destFolder.exists()){
-						destFolder.mkdirs();
-				    }
-					listOfFiles[i].renameTo(new File(destFolder + "/" + file_name));
-					listOfFiles[i].delete();
+		else {
+			dataFile = DataFile.findByName(user.getEmail(), file_name);
+		}
+		if (null == dataFile) {
+			return badRequest("You do NOT have the permission to operate this file!");
+		}
+
+		AnnotationLog.delete(file_name);
+		Measurement.delete(dataFile.getDatasetUri());
+		List<DataAcquisition> dataAcquisitions = DataAcquisition.findAll();
+		for (DataAcquisition da : dataAcquisitions) {
+			if (da.containsDataset(dataFile.getDatasetUri())) {
+				da.setNumberDataPoints(Measurement.getNumByDataAcquisition(da));
+				da.save();
+			}
+		}
+		dataFile.delete();
+
+		String path = "";
+		if(isProcessed){
+			path = ConfigProp.getPathProc();
+		}
+		else{
+			path = ConfigProp.getPathUnproc();
+		}
+
+		File file = new File(path + "/" + file_name);
+		file.delete();
+
+		return redirect(routes.AutoAnnotator.index());
+	}
+
+	@Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+	@BodyParser.Of(value = BodyParser.MultipartFormData.class, maxLength = 500 * 1024 * 1024)
+	public static Result uploadDataFile(String oper) {
+		String path = ConfigProp.getPathUnproc();
+
+		List<FilePart> fileParts = request().body().asMultipartFormData().getFiles();
+		for(FilePart filePart : fileParts) {
+			if (filePart != null) {
+				File file = filePart.getFile();
+				File newFile = new File(path + "/" + filePart.getFilename());
+				InputStream isFile;
+				try {
+					isFile = new FileInputStream(file);
+					byte[] byteFile;
+					byteFile = IOUtils.toByteArray(isFile);
+					FileUtils.writeByteArrayToFile(newFile, byteFile);
+					isFile.close();
+
+					DataFile dataFile = new DataFile();
+					dataFile.setFileName(filePart.getFilename());
+					dataFile.setOwnerEmail(AuthApplication.getLocalUser(session()).getEmail());
+					dataFile.setProcessStatus(false);
+					dataFile.setUploadTime(new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date()));
+					dataFile.save();
+				} catch (Exception e) {
+					e.printStackTrace();
 				}
 			}
 		}
+
+		return redirect(routes.AutoAnnotator.index());
 	}
-	
-    public static boolean annotateCSVFile(String file_name) {
-    	System.out.println("Annotating " + file_name);
-    	
-		State state = new State(State.ALL);
-		String ownerUri = UserManagement.getUriByEmail("gychant@qq.com");
-    	List<DataCollection> da_list = DataCollection.find(ownerUri, state);
-		
-		String dc_uri = null;
-		String deployment_uri = null;
-		String schema_uri = null;
-		for(DataCollection dc : da_list){
-			System.out.println(file_name);
-			String base_name = FilenameUtils.getBaseName(file_name);
-			System.out.println(base_name);
-			ValueCellProcessing cellProc = new ValueCellProcessing();
-			System.out.println(dc.getUri());
-			String qname = cellProc.replaceNameSpaceEx(dc.getUri()).split(":")[1];
-			System.out.println(qname);
-			if(qname.equals(base_name)){
-				dc_uri = dc.getUri();
-				System.out.println("=================================" + dc_uri);
-				deployment_uri = dc.getDeploymentUri();
-				System.out.println("=================================" + deployment_uri);
-				schema_uri = dc.getSchemaUri();
-				System.out.println("=================================" + schema_uri);
-				break;
-			}
+
+	@Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+	public static Result uploadDataFileByChunking(
+			String resumableChunkNumber,
+			String resumableChunkSize, 
+			String resumableCurrentChunkSize,
+			String resumableTotalSize,
+			String resumableType,
+			String resumableIdentifier,
+			String resumableFilename,
+			String resumableRelativePath) {
+		if (ResumableUpload.uploadFileByChunking(request(), 
+				ConfigProp.getPathUnproc())) {
+			return ok("Uploaded."); //This Chunk has been Uploaded.
+		} else {
+			return status(HttpServletResponse.SC_NOT_FOUND);
 		}
-		if(dc_uri == null){
-			System.out.println(String.format("Cannot find the target data acquisition: %s", file_name));
-			return false;
+	}
+
+	@Restrict(@Group(AuthApplication.DATA_MANAGER_ROLE))
+	public static Result postUploadDataFileByChunking(
+			String resumableChunkNumber, 
+			String resumableChunkSize, 
+			String resumableCurrentChunkSize,
+			String resumableTotalSize,
+			String resumableType,
+			String resumableIdentifier,
+			String resumableFilename,
+			String resumableRelativePath) {
+		if (ResumableUpload.postUploadFileByChunking(request(), 
+				ConfigProp.getPathUnproc())) {
+			DataFile dataFile = new DataFile();
+			dataFile.setFileName(resumableFilename);
+			dataFile.setOwnerEmail(AuthApplication.getLocalUser(session()).getEmail());
+			dataFile.setProcessStatus(false);
+			dataFile.setUploadTime(new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date()));
+			String dataAcquisitionUri = getProperDataAcquisitionUri(resumableFilename);
+			dataFile.setDataAcquisitionUri(dataAcquisitionUri == null ? "" : dataAcquisitionUri);
+			dataFile.save();
+			return(ok("Upload finished"));
+		} else {
+			return(ok("Upload"));
 		}
-		
-		CSVAnnotationHandler handler;
-    	try {
-    		if (deployment_uri != null) {
-    			deployment_uri = URLDecoder.decode(deployment_uri, "UTF-8");
-    		} else {
-    			deployment_uri = "";
-    		}
-		} catch (UnsupportedEncodingException e) {
-			e.printStackTrace();
-			return false;
-		}
-    	System.out.println("uploadCSV: uri is " + deployment_uri);
-    	if (!deployment_uri.equals("")) {
-
-    		/*
-    		 *  Add deployment information into handler
-    		 */
-    		String json = DeploymentQueries.exec(DeploymentQueries.DEPLOYMENT_BY_URI, deployment_uri);
-    		//System.out.println(json);
-    		SparqlQueryResults results = new SparqlQueryResults(json, false);
-    		TripleDocument docDeployment = results.sparqlResults.values().iterator().next();
-    		handler = new CSVAnnotationHandler(deployment_uri, docDeployment.get("platform"), docDeployment.get("instrument"));
-    		    		
-    		/*
-    		 * Add possible detector's characterisitcs into handler
-    		 */
-    		String dep_json = DeploymentQueries.exec(DeploymentQueries.DEPLOYMENT_CHARACTERISTICS_BY_URI, deployment_uri);
-    		System.out.println(dep_json);
-    		SparqlQueryResults results2 = new SparqlQueryResults(dep_json, false);
-    		Iterator<TripleDocument> it = results2.sparqlResults.values().iterator();
-    		Map<String,String> deploymentChars = new HashMap<String,String>();
-    		TripleDocument docChar;
-    		while (it.hasNext()) {
-    			docChar = (TripleDocument) it.next();
-    			if (docChar != null && docChar.get("char") != null && docChar.get("charName") != null) {
-    				deploymentChars.put((String)docChar.get("char"),(String)docChar.get("charName"));
-    				System.out.println("EC: " + docChar.get("char") + "   ecName: " + docChar.get("charName"));
-    			}
-    		}
-    		handler.setDeploymentCharacteristics(deploymentChars);
-
-    		/*
-    		 * Add URI of active datacollection in handler
-    		 */
-    		DataCollection dc = DataFactory.getActiveDataCollection(deployment_uri);
-    		if (dc != null && dc.getUri() != null) {
-    			handler.setDataCollectionUri(dc.getUri());
-    		}
-    	} else {
-    		handler = new CSVAnnotationHandler(deployment_uri, "", "");
-    	}
-    	
-    	if(schema_uri == null){
-    		System.out.println("Cannot find schema of the data acquisition");
-    		return false;
-    	}
-
-		NameSpaces ns = NameSpaces.getInstance();
-		String preamble = Downloads.FRAG_START_PREAMBLE;
-		preamble += ns.printNameSpaceList();
-		preamble += "\n";
-
-		//Insert KB    	
-		preamble += Downloads.FRAG_KB_PART1;
-		preamble += Play.application().configuration().getString("hadatac.console.kb"); 
-		preamble += Downloads.FRAG_KB_PART2;
-
-		try {
-			//Insert Data Set
-			preamble += "<" + DataFactory.getNextURI(DataFactory.DATASET_ABBREV) + ">";
-			preamble += Downloads.FRAG_DATASET;
-			preamble += handler.getDataCollectionUri() + ">; ";
-
-			int timeStampIndex = -1;
-			int aux = 0;
-			ArrayList<Integer> mt = new ArrayList<Integer>();
-			ArrayList<String> mt_preamble = new ArrayList<String>();
-			String json = DataAcquisitionSchemaQueries.exec(DataAcquisitionSchemaQueries.ATTRIBUTE_BY_SCHEMA_URI, schema_uri);
-			System.out.println(json);
-			SparqlQueryResults results = new SparqlQueryResults(json, false);
-			Iterator<TripleDocument> iterDoc = results.sparqlResults.values().iterator();
-			while(iterDoc.hasNext()){
-				TripleDocument doc = iterDoc.next();
-				int i = Integer.parseInt(doc.get("hasPosition"));
-				String entity = doc.get("hasEntity");
-				String attrib = doc.get("hasAttribute");
-				String unit = doc.get("hasUnit");
-				System.out.println("get " + i + "-entity: [" + entity + "]");
-				System.out.println("get " + i + "-attribute: [" + attrib + "]");
-				System.out.println("get " + i + "-unit: [" + unit + "]");
-
-//				if (entity != null && !entity.equals("") &&
-//						attrib != null && !attrib.equals("") && 
-//						unit != null && !unit.equals("")) {	
-					if (unit.equals(Downloads.FRAG_IN_DATE_TIME)) {
-						timeStampIndex = i; 
-					} else {
-						String p = "";
-						p += Downloads.FRAG_MT + aux;
-						p += Downloads.FRAG_MEASUREMENT_TYPE_PART1;
-						if (timeStampIndex != -1) {
-							p += Downloads.FRAG_IN_DATE_TIME;
-							p += Downloads.FRAG_IN_DATE_TIME_SUFFIX;
-						}
-						p += Downloads.FRAG_MEASUREMENT_TYPE_PART2;
-						p += i;
-						p += Downloads.FRAG_MEASUREMENT_TYPE_PART3;
-						p += "<" + entity + ">";
-						p += Downloads.FRAG_MEASUREMENT_TYPE_PART4;
-						p += "<" + attrib + ">"; 
-						p += Downloads.FRAG_MEASUREMENT_TYPE_PART5;
-						p += "<" + unit + ">";
-						p += " .\n";
-						aux++;
-						mt.add(i);
-						mt_preamble.add(p);
-					}
-//				}
-			}
-			
-			preamble += Downloads.FRAG_HAS_MEASUREMENT_TYPE;	
-			for (int i = 0; i < mt.size(); i++) {
-				preamble += Downloads.FRAG_MT + i + "> ";
-				if(i != (mt.size() - 1)){
-					preamble += ", ";
-				}
-			}
-			preamble += ".\n\n";
-
-			//Insert measurement types
-			for (String mt_str : mt_preamble) {
-				preamble += mt_str;
-			}
-
-			if (timeStampIndex != -1) {
-				preamble += "\n";
-				preamble += Downloads.FRAG_IN_DATE_TIME_STATEMENT + " " + timeStampIndex + "  . \n";  
-			}
-			
-			System.out.println(preamble);
-		} catch (Exception e) {
-			e.printStackTrace();
-			return false;
-		}
-
-		preamble += Downloads.FRAG_END_PREAMBLE;
-
-		Properties prop = new Properties();
-		try {
-			InputStream is = LoadKB.class.getClassLoader().getResourceAsStream("autoccsv.config");
-			prop.load(is);
-			is.close();
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		String path_unproc = prop.getProperty("path_unproc");
-		File newFile = new File(path_unproc + file_name);
-	    try {
-			preamble += FileUtils.readFileToString(newFile, "UTF-8");
-		} catch (IOException e) {
-			e.printStackTrace();
-			return false;
-		}
-
-	    try {
-			FileUtils.writeStringToFile(new File(LoadCCSV.UPLOAD_NAME), preamble);
-		} catch (IOException e) {
-			e.printStackTrace();
-			return false;
-		}
-	    LoadCCSV.playLoadCCSV();
-	    
-	    return true;
 	}
 }
+

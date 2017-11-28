@@ -1,7 +1,7 @@
 package org.hadatac.console.controllers;
 
 import org.hadatac.console.controllers.triplestore.UserManagement;
-import org.hadatac.console.models.User;
+import org.hadatac.console.models.SysUser;
 import be.objectify.deadbolt.java.actions.Restrict;
 import be.objectify.deadbolt.java.actions.Group;
 import be.objectify.deadbolt.java.actions.SubjectPresent;
@@ -86,21 +86,21 @@ public class Account extends Controller {
 	@Restrict(@Group(AuthApplication.DATA_OWNER_ROLE))
 	public static Result verifyEmail() {
 		com.feth.play.module.pa.controllers.Authenticate.noCache(response());
-		final User user = AuthApplication.getLocalUser(session());
-		if (user.emailValidated) {
+		final SysUser user = AuthApplication.getLocalUser(session());
+		if (user.getEmailValidated()) {
 			// E-Mail has been validated already
 			flash(AuthApplication.FLASH_MESSAGE_KEY,
 					Messages.get("playauthenticate.verify_email.error.already_validated"));
-		} else if (user.email != null && !user.email.trim().isEmpty()) {
+		} else if (user.getEmail() != null && !user.getEmail().trim().isEmpty()) {
 			flash(AuthApplication.FLASH_MESSAGE_KEY, Messages.get(
 					"playauthenticate.verify_email.message.instructions_sent",
-					user.email));
+					user.getEmail()));
 			MyUsernamePasswordAuthProvider.getProvider()
 					.sendVerifyEmailMailingAfterSignup(user, ctx());
 		} else {
 			flash(AuthApplication.FLASH_MESSAGE_KEY, Messages.get(
 					"playauthenticate.verify_email.error.set_email_first",
-					user.email));
+					user.getEmail()));
 		}
 		return redirect(routes.AuthApplication.profile());
 	}
@@ -108,9 +108,9 @@ public class Account extends Controller {
 	@Restrict(@Group(AuthApplication.DATA_OWNER_ROLE))
 	public static Result changePassword() {
 		com.feth.play.module.pa.controllers.Authenticate.noCache(response());
-		final User u = AuthApplication.getLocalUser(session());
+		final SysUser u = AuthApplication.getLocalUser(session());
 
-		if (!u.emailValidated) {
+		if (!u.getEmailValidated()) {
 			return ok(unverified.render());
 		} else {
 			return ok(password_change.render(PASSWORD_CHANGE_FORM));
@@ -126,10 +126,11 @@ public class Account extends Controller {
 			// User did not select whether to link or not link
 			return badRequest(password_change.render(filledForm));
 		} else {
-			final User user = AuthApplication.getLocalUser(session());
+			final SysUser user = AuthApplication.getLocalUser(session());
 			final String newPassword = filledForm.get().password;
-			/* - This code sets the URI of the user after change password as a way to set a uri that is missing from a previous registration. - */
-			user.uri = UserManagement.getUriByEmail(user.email);
+			/* - This code sets the URI of the user after change password as a way to set a uri 
+			 * that is missing from a previous registration. - */
+			user.setUri(UserManagement.getUriByEmail(user.getEmail()));
 			user.save();
 			/* ---- */
 			user.changePassword(new MyUsernamePasswordAuthUser(newPassword),
