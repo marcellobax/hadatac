@@ -1,0 +1,12 @@
+Testing with spreadsheet:
+
+https://www.lambdatest.com/blog/junit-parameterized-test-selenium/
+
+Testing with JSscript:
+
+https://www.lambdatest.com/blog/selenium-click-button-with-examples/
+
+
+Good youtube video:
+
+https://www.youtube.com/watch?v=I3NcaEVL-tc

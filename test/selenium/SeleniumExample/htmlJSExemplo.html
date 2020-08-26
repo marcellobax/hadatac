@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<!--
+To change this license header, choose License Headers in Project Properties.
+To change this template file, choose Tools | Templates
+and open the template in the editor.
+-->
+<html>
+    <head>
+        <title>Demo Simple using JavaScript with Selenium and JUnit</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    </head>
+    <body>
+	<h1>Demo Simple Search using JavaScript</h1>
+	
+	<fieldset>
+		<legend>Information for searching</legend>
+		<p>Type any data:</p>
+		<input type="text" id="textbox" name="textbox">
+		<br>
+		<input type="submit" id="button" name="button" value="Click here!" onclick="document.getElementById('result').innerHTML=document.getElementById('textbox').value">
+		
+		<p>You typed:
+		<div id="result"></id>
+				
+	</fieldset>	
+    
+    </body>
+</html>
